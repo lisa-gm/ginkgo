@@ -95,15 +95,22 @@ int main(int argc, char** argv)
     auto gpu = gko::CudaExecutor::create(0, gko::OmpExecutor::create());
     
     int debug = 0;
+    int extSinitial = 0;
     // debug = 0 : only compute selected inverse based on matrix
     // debug = 1 : feed in reference solution and compare against solution
+
+    // ./cuda-kernel A choleskyF L trueInverse invA 
     if (argc == 2 ) {
     }
     else if ( argc == 3 ){
 	    debug = 1;
 	    std::cout << " Computing error to reference solution in iterations "  << std::endl;
-	}
-    else {
+    /*} else if ( argc == 4 ){
+	    debug = 1;
+        extSinitial = 1;
+	    std::cout << " Computing error to reference solution in iterations && read in initial guess (sol at the mode)"  << std::endl;
+	*/
+    } else {
         std::cout << "Please execute with the following parameters:\n"
                   << argv[0]
                   << "<A matrix path> [optional: <I matrix path> ]\n";
@@ -117,8 +124,19 @@ int main(int argc, char** argv)
     	std::ifstream I_file(argv[2]);
 	I = gko::read<Csr>(I_file, gpu);
     }
+
+    // matrix reordering
+    auto P = gko::experimental::reorder::NestedDissection<value_type, index_type>::build().on(gpu)->generate(A_csr);
+
+    A_csr = A_csr->permute(P);
+
+    if( debug > 0 ){
+        I = I->permute(P);
+    }
+
     // use Ginkgo Cholesky factorization and use the combined as sparsity pattern S
     auto start = std::chrono::steady_clock::now();
+    // Cholesky factors stored as L + L^T - diag(L)
     auto S_csr = gko::experimental::factorization::Cholesky<value_type, index_type>::build().on(gpu)->generate(A_csr);
     auto LLU = S_csr->unpack();
     auto L = LLU->get_upper_factor();
@@ -130,7 +148,10 @@ int main(int argc, char** argv)
     gpu->copy_from(gpu, num_row_ptrs, S_csr->get_combined()->get_const_row_ptrs(),
                    row_ptrs_array.get_data());
     auto S_coo = Coo::create(gpu);
+    // write S_csr into S_coo -> contains L + L^T - diag(L)
     S_csr->get_combined()->convert_to(S_coo);
+
+    //gko::write(std::ofstream{"cholesky.mtx"}, S_coo);
 
     auto S_row_ptrs = row_ptrs_array.get_const_data();
     auto S_row_idxs = S_coo->get_const_row_idxs();
@@ -147,18 +168,22 @@ int main(int argc, char** argv)
                     sym_map.get_data());
 
 
+    // if extSinitial == 1
+   
     // compute error to correct solution
     auto size = S_coo->get_num_stored_elements();
     auto neg_one = gko::initialize<Dense>({-gko::one<value_type>()}, gpu);
     std::unique_ptr<const Dense>A_vec;
     std::unique_ptr<const Dense>B_vec;
     if( debug > 0 ){
+    // could also use sparsity pattern of A instead of AselInv
 	auto sp_size = I->get_num_stored_elements();
 	A_vec = Dense::create_const(
             gpu, gko::dim<2>{sp_size, 1},
             gko::array<value_type>::const_view(gpu, 
 		    sp_size, I->get_const_values()), 1);
 	auto ASelInv = I->clone();
+    // 
 	ASpOnesB( ASelInv->get_size()[0], 
 			ASelInv->get_row_ptrs(),
 			ASelInv->get_col_idxs(),
@@ -166,6 +191,7 @@ int main(int argc, char** argv)
 			S_row_ptrs,
 			S_col_idxs,
 			S_values);
+        // view selInv entries into vector to compute norm
         B_vec = Dense::create_const(
             gpu, gko::dim<2>{sp_size, 1},
             gko::array<value_type>::const_view(gpu, 
@@ -193,12 +219,12 @@ int main(int argc, char** argv)
     // Solve system
     for(int i=0; i<50; i++){
     	start = std::chrono::steady_clock::now();
-	parsinv( L->get_size()[0], 
+	parsinv(L->get_size()[0], 
 		    L->get_num_stored_elements(), 
 		    L->get_const_row_ptrs(), 
 		    L->get_const_col_idxs(),
 		    L->get_const_values(),
-                    S_coo->get_num_stored_elements(),
+            S_coo->get_num_stored_elements(),
 		    S_row_ptrs,
 		    S_row_idxs,
 		    S_col_idxs,
@@ -242,7 +268,11 @@ int main(int argc, char** argv)
     printf("\n#####################################################################\n");
     printf("#\n# Factorization time: %.4e\n# Selected inverse time: %.4e\n#", factorization_time, inverse_time);
     printf("\n#####################################################################\n");
+
     // Write result
     //write(std::cout, I);
-    //write(std::cout, S_coo);
+   //write(std::cout, S_coo);
+
+   //std::ofstream sol_file = "selInv_mode.mtx";
+   //write(sol_inv, S_coo->permute(P, gko::matrix::permute_mode::symm_inverse));
 }

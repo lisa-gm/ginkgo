@@ -1,6 +1,42 @@
 #include <iostream>
 constexpr unsigned int default_block_size = 512;
 
+/// from Tobias
+__device__ __forceinline__ void store_relaxed(double* ptr, double result)
+{
+#if __CUDA_ARCH__ < 700
+    asm volatile("st.volatile.f64 [%0], %1;" ::"l"(ptr), "d"(result)
+                 : "memory");
+#else
+    asm volatile("st.relaxed.gpu.f64 [%0], %1;" ::"l"(ptr), "d"(result)
+                 : "memory");
+#endif
+}
+
+
+__device__ __forceinline__ double load_relaxed(const double* ptr)
+{
+    double result;
+#if __CUDA_ARCH__ < 700
+    asm volatile("ld.volatile.f64 %0, [%1];"
+                 : "=d"(result)
+                 : "l"(const_cast<double*>(ptr))
+                 : "memory");
+#else
+    asm volatile("ld.relaxed.gpu.f64 %0, [%1];"
+                 : "=d"(result)
+                 : "l"(const_cast<double*>(ptr))
+                 : "memory");
+#endif
+
+    return result;
+}
+
+
+
+
+////////////
+
 
 __global__ __launch_bounds__(default_block_size) void parsinv_kernel(
     int n,     // matrix size
@@ -33,8 +69,46 @@ __global__ __launch_bounds__(default_block_size) void parsinv_kernel(
             // (j,i) int t = i; i = j; j = t;
         }
 
+        // from TOBIAS
+        const auto Lii = load_relaxed(Lval + Lrowptr[i]);
+        // compute L(i,:).* S(j,:)
+        // il and is are iterating over the nonzero entries in the respective
+        // rows
+        int il = Lrowptr[i+1] -1;
+        int is = Srowptr[j+1] - 1;
+        int jl, js;
+        double s = 0.0;
+	// for faster execution, sweep over rows right to left
+        // we know that L is an upper matrix, and we can this way save all 
+	// the comparisons with elements in the lower triangular matrix	
+        while (il > Lrowptr[i] && is > Srowptr[j]) {
+            // jl and js are the col-indices of the respective nonzero entries
+            jl = Lcolidx[il];
+            js = Scolidx[is];
+            if (jl == js) {
+                auto sp = Lval[il] * load_relaxed(Sval + is);
+                s = s + sp;
+            }
+            il = (jl >= js) ? il - 1 : il;
+            is = (jl <= js) ? is - 1 : is;
+        }
+        s = 1. / Lii * s;  // scaling
+
+        if (i == j)  // diagonal element
+            store_relaxed(Sval + threadidx, 1. / (Lii * Lii) - s);
+        else {
+            store_relaxed(Sval + threadidx, -s);
+            for (int t = Srowptr[j]; t < Srowptr[j + 1]; t++) {
+                if (Scolidx[t] == i) {
+                    store_relaxed(Sval + t, -s);
+                    break;
+                }
+            }
+        }
+
+#if 0
         // retrieve L(i,i), easy as these are the first element in each row
-        const auto Lii = Lval[Lrowptr[i]];
+        //const auto Lii = Lval[Lrowptr[i]];
         // compute L(i,:).* S(j,:)
         // il and is are iterating over the nonzero entries in the respective
         // rows
@@ -71,7 +145,10 @@ __global__ __launch_bounds__(default_block_size) void parsinv_kernel(
                 }
             }*/
         }
-    }
+#endif
+
+
+    } // close if (threadidx < Snnz) 
 }
 
 
