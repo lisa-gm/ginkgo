@@ -35,6 +35,14 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ginkgo/ginkgo.hpp>
 #include <iostream>
 #include <chrono>
+#include <stdlib.h>
+#include <stdio.h>
+
+using value_type = double;
+using index_type = gko::int32;
+using Csr = gko::matrix::Csr<value_type, index_type>;
+using Coo = gko::matrix::Coo<value_type, index_type>;
+using Dense = gko::matrix::Dense<value_type>;
 
 void parsinv(
     int n, // matrix size
@@ -83,70 +91,158 @@ void ASpOnesB(
     const double *Bval // val array B
     );
 
-int main(int argc, char** argv)
+
+
+inline void read_load_input(std::string inputName, std::shared_ptr<gko::CudaExecutor> gpu, std::unique_ptr<Csr> Matrix_csr, int flag){
+
+    std::ifstream Matrix_csr_file(inputName);
+
+    if(inputName.compare("trueInverse") == 0      || inputName.compare("TrueInverse") == 0){
+        flag = 1;
+        std::cout << " Computing error to reference solution in iterations "  << std::endl;
+        Matrix_csr = gko::read<Csr>(Matrix_csr_file, gpu);
+
+    } else if(inputName.compare("choleskyF") == 0 || inputName.compare("CholeskyF") == 0){
+        flag = 1;
+        std::cout << " Using externally provided Cholesky factor. Assuming A = L*t(L). "  << std::endl;
+        Matrix_csr = gko::read<Csr>(Matrix_csr_file, gpu);
+
+    } else if(inputName.compare("initialGuess") == 0 || inputName.compare("InitialGuess") == 0){
+        flag = 1;
+        std::cout << " Using externally provided initial guess for S. "  << std::endl;
+        Matrix_csr = gko::read<Csr>(Matrix_csr_file, gpu);            
+    }
+
+}
+
+int main(int argc, char* argv[])
 {
-    using value_type = double;
-    using index_type = gko::int32;
-    using Csr = gko::matrix::Csr<value_type, index_type>;
-    using Coo = gko::matrix::Coo<value_type, index_type>;
-    using Dense = gko::matrix::Dense<value_type>;
 
     // Instantiate a CUDA executor
-    auto gpu = gko::CudaExecutor::create(0, gko::OmpExecutor::create());
+    std::shared_ptr<gko::CudaExecutor> gpu = gko::CudaExecutor::create(0, gko::OmpExecutor::create());
     
-    int debug = 0;
-    int extSinitial = 0;
+    // timers
+    double factorization_time;
+    std::chrono::time_point<std::chrono::steady_clock> start;
+    std::chrono::time_point<std::chrono::steady_clock> end;
+
     // debug = 0 : only compute selected inverse based on matrix
     // debug = 1 : feed in reference solution and compare against solution
+    int debug = 0;
 
-    // ./cuda-kernel A choleskyF L trueInverse invA 
-    if (argc == 2 ) {
+    int extSinitial = 0;
+    int extL = 0;
+
+    std::ifstream A_file(argv[1]);
+    auto A_csr = gko::share(gko::read<Csr>(A_file, gpu));
+
+    // TODO: wrong type ... doesn't compile ...
+    //std::unique_ptr<Csr> I;
+    //std::unique_ptr<Csr> L;
+    //std::unique_ptr<Csr> S_csr;
+
+    std::unique_ptr<gko::matrix::Csr<value_type, index_type>> S_csr;
+    std::unique_ptr<gko::matrix::Csr<value_type, index_type>> L;
+    std::unique_ptr<gko::matrix::Csr<value_type, index_type>> I;
+
+    // options are 2, 4, 6, 8 
+    // ./cuda-kernel A choleskyF L trueInverse invA initialGuess S (order arbitrary)
+    if (argc == (1 + 1) ) {
     }
-    else if ( argc == 3 ){
-	    debug = 1;
-	    std::cout << " Computing error to reference solution in iterations "  << std::endl;
-    /*} else if ( argc == 4 ){
-	    debug = 1;
-        extSinitial = 1;
-	    std::cout << " Computing error to reference solution in iterations && read in initial guess (sol at the mode)"  << std::endl;
-	*/
+    else if ( argc == (1 + 3) || argc == (1 + 5) || argc == (1 + 7)){
+
+        std::string inputName2 = argv[2];
+        if(inputName2.compare("trueInverse") == 0        || inputName2.compare("TrueInverse") == 0){
+            read_load_input(inputName2, gpu, I, debug);
+        } else if(inputName2.compare("choleskyF") == 0   || inputName2.compare("CholeskyF") == 0){
+            read_load_input(inputName2, gpu, L, extL);
+        } else if(inputName2.compare("initialGuess") == 0 || inputName2.compare("InitialGuess") == 0){
+            read_load_input(inputName2, gpu, S_csr, extSinitial);
+        } else {
+            printf("invalid input name. Options are: trueInverse choleskyF initialGuess");
+        }
+
+        if(argc == (1 + 5) || argc == (1 + 7)){
+            std::string inputName4 = argv[4];
+
+            if(inputName4.compare("trueInverse") == 0        || inputName4.compare("TrueInverse") == 0){
+                read_load_input(inputName4, gpu, I, debug);
+            } else if(inputName4.compare("choleskyF") == 0   || inputName4.compare("CholeskyF") == 0){
+                read_load_input(inputName4, gpu, L, extL);
+            } else if(inputName4.compare("initialGuess") == 0 || inputName4.compare("InitialGuess") == 0){
+                read_load_input(inputName4, gpu, S_csr, extSinitial);
+            } else {
+                printf("invalid input name. Options are: trueInverse choleskyF initialGuess");
+            }
+
+            if(argc == (1 + 7)){
+                std::string inputName6 = argv[6];
+
+                if(inputName6.compare("trueInverse") == 0        || inputName6.compare("TrueInverse") == 0){
+                    read_load_input(inputName6, gpu, I, debug);
+                } else if(inputName6.compare("choleskyF") == 0   || inputName6.compare("CholeskyF") == 0){
+                    read_load_input(inputName6, gpu, L, extL);
+                } else if(inputName6.compare("initialGuess") == 0 || inputName6.compare("InitialGuess") == 0){
+                    read_load_input(inputName6, gpu, S_csr, extSinitial);
+                } else {
+                    printf("invalid input name. Options are: trueInverse choleskyF initialGuess");
+                }
+
+            }
+
+        }
+
     } else {
         std::cout << "Please execute with the following parameters:\n"
                   << argv[0]
                   << "<A matrix path> [optional: <I matrix path> ]\n";
         std::exit(1);
     }
-    std::ifstream A_file(argv[1]);
-    auto A_csr = gko::share(gko::read<Csr>(A_file, gpu));
-    std::unique_ptr<Csr> I;
 
-    if( debug > 0 ){
-    	std::ifstream I_file(argv[2]);
-	I = gko::read<Csr>(I_file, gpu);
-    }
+    exit(1);
 
-    // matrix reordering
-    auto P = gko::experimental::reorder::NestedDissection<value_type, index_type>::build().on(gpu)->generate(A_csr);
-
+    // if extL == 0 && extSinitial == 0 -> compute Cholesky factor, store L and store L + L^T + diag(L) in S_csr
+    // if extL == 0 && extSinitial == 1 -> compute Cholesky factor, store L => maybe perform check that sparsity pattern matches on lower part?
+    // if extL == 1 && extSinitial == 0 -> store L + L^T + diag(L) in S_csr
+    // if extL == 1 && extSinitial == 1 -> just perform check that sparsity patterns match
+   
+   // compute cholesky factor 
+   // TODO: add reordering ... -> don't allow reordering if initial guess S is provided ... sparsity pattern depends on L ...
+   // or figure out some other way ...
+    /* auto P = gko::experimental::reorder::NestedDissection<value_type, index_type>::build().on(gpu)->generate(A_csr);
     A_csr = A_csr->permute(P);
 
     if( debug > 0 ){
         I = I->permute(P);
     }
+    */
 
-    // use Ginkgo Cholesky factorization and use the combined as sparsity pattern S
-    auto start = std::chrono::steady_clock::now();
-    // Cholesky factors stored as L + L^T - diag(L)
-    auto S_csr = gko::experimental::factorization::Cholesky<value_type, index_type>::build().on(gpu)->generate(A_csr);
-    auto LLU = S_csr->unpack();
-    auto L = LLU->get_upper_factor();
-    auto end = std::chrono::steady_clock::now();
-    double factorization_time = std::chrono::duration<double>(end-start).count();
+   if(extL == 0 && extSinitial == 0){
+        start = std::chrono::steady_clock::now();
+        // Cholesky factors stored as L + L^T - diag(L)
+        S_csr = gko::experimental::factorization::Cholesky<value_type, index_type>::build().on(gpu)->generate(A_csr);
+        auto LLU = S_csr->unpack();
+        L = LLU->get_upper_factor();
+        end = std::chrono::steady_clock::now();
+        factorization_time = std::chrono::duration<double>(end-start).count();
 
+    } else {
+        if(extSinitial == 0){
+            // TODO: store L + L^T + diag(L) in S_csr using L
+        }
+    }
+
+    if(extSinitial == 1){
+        // TODO: check that sparsity pattern matches.
+    }
+
+
+    // TODO: not sure what this is doing? copy data to GPU?
     const auto num_row_ptrs = S_csr->get_size()[0] + 1;
     gko::array<index_type> row_ptrs_array(gpu, num_row_ptrs);
     gpu->copy_from(gpu, num_row_ptrs, S_csr->get_combined()->get_const_row_ptrs(),
-                   row_ptrs_array.get_data());
+                row_ptrs_array.get_data());
+
     auto S_coo = Coo::create(gpu);
     // write S_csr into S_coo -> contains L + L^T - diag(L)
     S_csr->get_combined()->convert_to(S_coo);
