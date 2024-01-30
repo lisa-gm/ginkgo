@@ -15,7 +15,7 @@ set(CMAKE_CUDA_STANDARD 14)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 
 add_executable(cuda-kernel-integration cuda-kernel-integration.cpp cuda-kernel.cu)
-target_link_libraries(cuda-kernel-integration Ginkgo::ginkgo OpenMP::OpenMP_CXX)
+target_link_libraries(cuda-kernel-integration Ginkgo::ginkgo OpenMP::OpenMP_CXX  gflags)
 
 # workaround for clang-cuda/g++ interaction
 set_target_properties(cuda-kernel-integration PROPERTIES POSITION_INDEPENDENT_CODE ON)
