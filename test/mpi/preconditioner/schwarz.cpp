@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #include <array>
 #include <memory>
@@ -178,6 +150,36 @@ protected:
 TYPED_TEST_SUITE(SchwarzPreconditioner, gko::test::ValueLocalGlobalIndexTypes,
                  TupleTypenameNameGenerator);
 
+TYPED_TEST(SchwarzPreconditioner, GenerateFailsIfInvalidState)
+{
+    using value_type = typename TestFixture::value_type;
+    using local_index_type = typename TestFixture::local_index_type;
+    using local_prec_type =
+        gko::preconditioner::Jacobi<value_type, local_index_type>;
+    using prec = typename TestFixture::dist_prec_type;
+
+    auto local_solver = gko::share(local_prec_type::build()
+                                       .with_max_block_size(1u)
+                                       .on(this->exec)
+                                       ->generate(this->non_dist_mat));
+    auto schwarz = prec::build()
+                       .with_local_solver(this->local_solver_factory)
+                       .with_generated_local_solver(local_solver)
+                       .on(this->exec);
+
+    ASSERT_THROW(schwarz->generate(this->dist_mat), gko::InvalidStateError);
+}
+
+
+TYPED_TEST(SchwarzPreconditioner, GenerateFailsIfNoSolverProvided)
+{
+    using prec = typename TestFixture::dist_prec_type;
+    auto schwarz_no_solver = prec::build().on(this->exec);
+
+    ASSERT_THROW(schwarz_no_solver->generate(this->dist_mat),
+                 gko::InvalidStateError);
+}
+
 
 TYPED_TEST(SchwarzPreconditioner, CanApplyPreconditionedSolver)
 {
@@ -218,11 +220,44 @@ TYPED_TEST(SchwarzPreconditioner, CanApplyPreconditionedSolver)
 }
 
 
+TYPED_TEST(SchwarzPreconditioner, CanApplyPreconditionedSolverWithPregenSolver)
+{
+    using value_type = typename TestFixture::value_type;
+    using local_index_type = typename TestFixture::local_index_type;
+    using local_prec_type =
+        gko::preconditioner::Jacobi<value_type, local_index_type>;
+    using csr = typename TestFixture::local_matrix_type;
+    using cg = typename TestFixture::solver_type;
+    using prec = typename TestFixture::dist_prec_type;
+
+    auto local_solver =
+        gko::share(local_prec_type::build()
+                       .with_max_block_size(1u)
+                       .on(this->exec)
+                       ->generate(this->dist_mat->get_local_matrix()));
+    auto precond = prec::build()
+                       .with_local_solver(this->local_solver_factory)
+                       .on(this->exec)
+                       ->generate(this->dist_mat);
+    auto precond_pregen = prec::build()
+                              .with_generated_local_solver(local_solver)
+                              .on(this->exec)
+                              ->generate(this->dist_mat);
+    auto dist_x = gko::share(this->dist_x->clone());
+    auto dist_x_pregen = gko::share(this->dist_x->clone());
+
+    precond->apply(this->dist_b.get(), dist_x.get());
+    precond_pregen->apply(this->dist_b.get(), dist_x_pregen.get());
+
+    GKO_ASSERT_MTX_NEAR(dist_x->get_local_vector(),
+                        dist_x_pregen->get_local_vector(),
+                        r<value_type>::value);
+}
+
+
 TYPED_TEST(SchwarzPreconditioner, CanApplyPreconditioner)
 {
     using value_type = typename TestFixture::value_type;
-    using csr = typename TestFixture::local_matrix_type;
-    using cg = typename TestFixture::solver_type;
     using prec = typename TestFixture::dist_prec_type;
 
     auto precond_factory = prec::build()

@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #include <memory>
 
@@ -44,6 +16,25 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 namespace gko {
 namespace experimental {
 namespace factorization {
+
+
+enum class symbolic_type {
+    /** An LU factorization algorithm that works on all matrices. */
+    general,
+    /**
+     * An LU factorization algorithm that works best on matrices with an almost
+     * symmetric sparsity pattern. It is correct for general matrices, but may
+     * use excessive amounts of memory and time.
+     */
+    near_symmetric,
+    /**
+     * An LU factorization algorithm that works only on matrices with a
+     * symmetric sparsity pattern. Running it on a matrix with a non-symmetric
+     * sparsity pattern is undefined behavior and will likely lead to the
+     * application crashing.
+     */
+    symmetric
+};
 
 
 /**
@@ -85,12 +76,14 @@ public:
             GKO_FACTORY_PARAMETER_SCALAR(symbolic_factorization, nullptr);
 
         /**
-         * If the system matrix has a symmetric sparsity pattern, set this flag
-         * to `true` to use a symbolic Cholesky factorization instead of a
-         * symbolic LU factorization to determine the sparsity pattern of L & U.
-         * This will most likely significantly reduce the generation runtime.
+         * If the symbolic factorization of the matrix is not provided to the
+         * factory, this parameter controls which algorithm will be used to
+         * compute it.
+         * @note Only use symbolic_factorization_algorithm::symmetric if you are
+         *       sure your matrix has a symmetric sparsity pattern!
          */
-        bool GKO_FACTORY_PARAMETER_SCALAR(symmetric_sparsity, false);
+        symbolic_type GKO_FACTORY_PARAMETER_SCALAR(symbolic_algorithm,
+                                                   symbolic_type::general);
 
         /**
          * The `system_matrix`, which will be given to this factory, must be
@@ -104,6 +97,13 @@ public:
          */
         bool GKO_FACTORY_PARAMETER_SCALAR(skip_sorting, false);
     };
+
+    /**
+     * Returns the parameters used to construct the factory.
+     *
+     * @return the parameters used to construct the factory.
+     */
+    const parameters_type& get_parameters() { return parameters_; }
 
     /**
      * @copydoc LinOpFactory::generate

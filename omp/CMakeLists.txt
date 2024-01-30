@@ -23,7 +23,9 @@ target_sources(ginkgo_omp
     factorization/par_ict_kernels.cpp
     factorization/par_ilu_kernels.cpp
     factorization/par_ilut_kernels.cpp
+    matrix/batch_csr_kernels.cpp
     matrix/batch_dense_kernels.cpp
+    matrix/batch_ell_kernels.cpp
     matrix/coo_kernels.cpp
     matrix/csr_kernels.cpp
     matrix/dense_kernels.cpp
@@ -37,6 +39,7 @@ target_sources(ginkgo_omp
     preconditioner/isai_kernels.cpp
     preconditioner/jacobi_kernels.cpp
     reorder/rcm_kernels.cpp
+    solver/batch_bicgstab_kernels.cpp
     solver/cb_gmres_kernels.cpp
     solver/idr_kernels.cpp
     solver/lower_trs_kernels.cpp

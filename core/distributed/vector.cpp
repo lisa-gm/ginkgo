@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #include <ginkgo/core/distributed/vector.hpp>
 
@@ -574,10 +546,52 @@ void Vector<ValueType>::compute_squared_norm2(ptr_param<LinOp> result,
 
 
 template <typename ValueType>
+void Vector<ValueType>::compute_mean(ptr_param<LinOp> result) const
+{
+    array<char> tmp{this->get_executor()};
+    this->compute_mean(result, tmp);
+}
+
+
+template <typename ValueType>
+void Vector<ValueType>::compute_mean(ptr_param<LinOp> result,
+                                     array<char>& tmp) const
+{
+    using MeanVector = local_vector_type;
+    const auto global_size = this->get_size()[0];
+    const auto local_size = this->get_local_vector()->get_size()[0];
+    const auto num_vecs = static_cast<int>(this->get_size()[1]);
+    GKO_ASSERT_EQUAL_COLS(result, this);
+    auto exec = this->get_executor();
+    const auto comm = this->get_communicator();
+    auto dense_res = make_temporary_clone(exec, as<MeanVector>(result));
+    this->get_local_vector()->compute_mean(dense_res.get());
+
+    // scale by its weight ie ratio of local to global size
+    auto weight = initialize<matrix::Dense<remove_complex<ValueType>>>(
+        {static_cast<remove_complex<ValueType>>(local_size) / global_size},
+        this->get_executor());
+    dense_res->scale(weight.get());
+
+    exec->synchronize();
+    if (mpi::requires_host_buffer(exec, comm)) {
+        host_reduction_buffer_.init(exec->get_master(), dense_res->get_size());
+        host_reduction_buffer_->copy_from(dense_res.get());
+        comm.all_reduce(exec->get_master(),
+                        host_reduction_buffer_->get_values(), num_vecs,
+                        MPI_SUM);
+        dense_res->copy_from(host_reduction_buffer_.get());
+    } else {
+        comm.all_reduce(exec, dense_res->get_values(), num_vecs, MPI_SUM);
+    }
+}
+
+template <typename ValueType>
 ValueType& Vector<ValueType>::at_local(size_type row, size_type col) noexcept
 {
     return local_.at(row, col);
 }
+
 
 template <typename ValueType>
 ValueType Vector<ValueType>::at_local(size_type row,
@@ -585,6 +599,7 @@ ValueType Vector<ValueType>::at_local(size_type row,
 {
     return local_.at(row, col);
 }
+
 
 template <typename ValueType>
 ValueType& Vector<ValueType>::at_local(size_type idx) noexcept

@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef GKO_PUBLIC_CORE_BASE_EXECUTOR_HPP_
 #define GKO_PUBLIC_CORE_BASE_EXECUTOR_HPP_
@@ -1307,24 +1279,20 @@ public:
      *
      * @param device_reset  whether to allow a device reset or not
      */
-    [[deprecated(
+    GKO_DEPRECATED(
         "device_reset is no longer supported, call "
-        "cudaDeviceReset/hipDeviceReset manually")]] void
-    set_device_reset(bool device_reset)
-    {}
+        "cudaDeviceReset/hipDeviceReset manually")
+    void set_device_reset(bool device_reset) {}
 
     /**
      * Returns the current status of the device reset boolean for this executor.
      *
      * @return the current status of the device reset boolean for this executor.
      */
-    [[deprecated(
+    GKO_DEPRECATED(
         "device_reset is no longer supported, call "
-        "cudaDeviceReset/hipDeviceReset manually")]] bool
-    get_device_reset()
-    {
-        return false;
-    }
+        "cudaDeviceReset/hipDeviceReset manually")
+    bool get_device_reset() { return false; }
 
 protected:
     /**
@@ -1334,11 +1302,10 @@ protected:
      */
     EnableDeviceReset() {}
 
-    [[deprecated(
+    GKO_DEPRECATED(
         "device_reset is no longer supported, call "
-        "cudaDeviceReset/hipDeviceReset manually")]] EnableDeviceReset(bool
-                                                                           device_reset)
-    {}
+        "cudaDeviceReset/hipDeviceReset manually")
+    EnableDeviceReset(bool device_reset) {}
 };
 
 
@@ -1530,13 +1497,14 @@ public:
      *                    on. See @allocation_mode for more details
      * @param stream  the stream to execute operations on.
      */
-    [[deprecated(
+    GKO_DEPRECATED(
         "device_reset is deprecated entirely, call cudaDeviceReset directly. "
         "alloc_mode was replaced by the Allocator type "
-        "hierarchy.")]] static std::shared_ptr<CudaExecutor>
-    create(int device_id, std::shared_ptr<Executor> master, bool device_reset,
-           allocation_mode alloc_mode = default_cuda_alloc_mode,
-           CUstream_st* stream = nullptr);
+        "hierarchy.")
+    static std::shared_ptr<CudaExecutor> create(
+        int device_id, std::shared_ptr<Executor> master, bool device_reset,
+        allocation_mode alloc_mode = default_cuda_alloc_mode,
+        CUstream_st* stream = nullptr);
 
     /**
      * Creates a new CudaExecutor with a custom allocator and device stream.
@@ -1743,13 +1711,14 @@ public:
      * @param alloc_mode  the allocation mode that the executor should operate
      *                    on. See @allocation_mode for more details
      */
-    [[deprecated(
+    GKO_DEPRECATED(
         "device_reset is deprecated entirely, call hipDeviceReset directly. "
         "alloc_mode was replaced by the Allocator type "
-        "hierarchy.")]] static std::shared_ptr<HipExecutor>
-    create(int device_id, std::shared_ptr<Executor> master, bool device_reset,
-           allocation_mode alloc_mode = default_hip_alloc_mode,
-           GKO_HIP_STREAM_STRUCT* stream = nullptr);
+        "hierarchy.")
+    static std::shared_ptr<HipExecutor> create(
+        int device_id, std::shared_ptr<Executor> master, bool device_reset,
+        allocation_mode alloc_mode = default_hip_alloc_mode,
+        GKO_HIP_STREAM_STRUCT* stream = nullptr);
 
     static std::shared_ptr<HipExecutor> create(
         int device_id, std::shared_ptr<Executor> master,

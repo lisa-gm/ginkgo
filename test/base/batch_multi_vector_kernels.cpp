@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #include <ginkgo/core/base/batch_multi_vector.hpp>
 
@@ -70,10 +42,18 @@ protected:
             std::normal_distribution<>(-1.0, 1.0), rand_engine, ref);
     }
 
-    void set_up_vector_data(gko::size_type num_vecs,
+    void set_up_elem_scale_vector_data(gko::size_type num_vecs,
+                                       const int num_rows = 252)
+    {
+        x = gen_mtx<Mtx>(batch_size, num_rows, num_vecs);
+        alpha = gen_mtx<Mtx>(batch_size, num_rows, num_vecs);
+        dx = gko::clone(exec, x);
+        dalpha = gko::clone(exec, alpha);
+    }
+
+    void set_up_vector_data(gko::size_type num_vecs, const int num_rows = 252,
                             bool different_alpha = false)
     {
-        const int num_rows = 252;
         x = gen_mtx<Mtx>(batch_size, num_rows, num_vecs);
         y = gen_mtx<Mtx>(batch_size, num_rows, num_vecs);
         c_x = gen_mtx<ComplexMtx>(batch_size, num_rows, num_vecs);
@@ -143,7 +123,7 @@ TEST_F(MultiVector, MultipleVectorAddScaledIsEquivalentToRef)
 
 TEST_F(MultiVector, MultipleVectorAddScaledWithDifferentAlphaIsEquivalentToRef)
 {
-    set_up_vector_data(20, true);
+    set_up_vector_data(20, 252, true);
 
     x->add_scaled(alpha.get(), y.get());
     dx->add_scaled(dalpha.get(), dy.get());
@@ -182,6 +162,32 @@ TEST_F(MultiVector, MultipleVectorScaleWithDifferentAlphaIsEquivalentToRef)
     dx->scale(dalpha.get());
 
     GKO_ASSERT_BATCH_MTX_NEAR(dx, x, 5 * r<value_type>::value);
+}
+
+
+TEST_F(MultiVector, MultipleVectorElemWiseScaleIsEquivalentToRef)
+{
+    set_up_elem_scale_vector_data(20);
+
+    x->scale(alpha.get());
+    dx->scale(dalpha.get());
+
+    GKO_ASSERT_BATCH_MTX_NEAR(dx, x, 5 * r<value_type>::value);
+}
+
+
+TEST_F(MultiVector, ComputeNorm2SingleSmallIsEquivalentToRef)
+{
+    set_up_vector_data(1, 10);
+    auto norm_size =
+        gko::batch_dim<2>(batch_size, gko::dim<2>{1, x->get_common_size()[1]});
+    auto norm_expected = NormVector::create(this->ref, norm_size);
+    auto dnorm = NormVector::create(this->exec, norm_size);
+
+    x->compute_norm2(norm_expected.get());
+    dx->compute_norm2(dnorm.get());
+
+    GKO_ASSERT_BATCH_MTX_NEAR(norm_expected, dnorm, 5 * r<value_type>::value);
 }
 
 
@@ -238,6 +244,21 @@ TEST_F(MultiVector, ComputeDotIsEquivalentToRef)
 TEST_F(MultiVector, ComputeDotSingleIsEquivalentToRef)
 {
     set_up_vector_data(1);
+    auto dot_size =
+        gko::batch_dim<2>(batch_size, gko::dim<2>{1, x->get_common_size()[1]});
+    auto dot_expected = Mtx::create(this->ref, dot_size);
+    auto ddot = Mtx::create(this->exec, dot_size);
+
+    x->compute_dot(y.get(), dot_expected.get());
+    dx->compute_dot(dy.get(), ddot.get());
+
+    GKO_ASSERT_BATCH_MTX_NEAR(dot_expected, ddot, 5 * r<value_type>::value);
+}
+
+
+TEST_F(MultiVector, ComputeDotSingleSmallIsEquivalentToRef)
+{
+    set_up_vector_data(1, 10);
     auto dot_size =
         gko::batch_dim<2>(batch_size, gko::dim<2>{1, x->get_common_size()[1]});
     auto dot_expected = Mtx::create(this->ref, dot_size);

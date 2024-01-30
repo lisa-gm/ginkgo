@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef GKO_PUBLIC_CORE_PRECONDITIONER_ILU_HPP_
 #define GKO_PUBLIC_CORE_PRECONDITIONER_ILU_HPP_
@@ -66,11 +38,10 @@ namespace preconditioner {
  * It allows to set both the solver for L and the solver for U independently,
  * while providing the defaults solver::LowerTrs and solver::UpperTrs, which
  * are direct triangular solvers.
- * For these solvers, a factory can be provided (with `with_l_solver_factory`
- * and `with_u_solver_factory`) to have more control over their behavior.
- * In particular, it is possible to use an iterative method for solving the
- * triangular systems. The default parameters for an iterative triangluar
- * solver are:
+ * For these solvers, a factory can be provided (with `with_l_solver` and
+ * `with_u_solver`) to have more control over their behavior. In particular, it
+ * is possible to use an iterative method for solving the triangular systems.
+ * The default parameters for an iterative triangluar solver are:
  * - reduction factor = 1e-4
  * - max iteration = <number of rows of the matrix given to the solver>
  * Solvers without such criteria can also be used, in which case none are set.
@@ -152,15 +123,17 @@ public:
          */
         std::shared_ptr<const LinOpFactory> factorization_factory{};
 
-        [[deprecated("use with_l_solver instead")]] parameters_type&
-        with_l_solver_factory(
-            deferred_factory_parameter<typename l_solver_type::Factory> solver)
+        GKO_DEPRECATED("use with_l_solver instead")
+        parameters_type& with_l_solver_factory(
+            deferred_factory_parameter<const typename l_solver_type::Factory>
+                solver)
         {
             return with_l_solver(std::move(solver));
         }
 
         parameters_type& with_l_solver(
-            deferred_factory_parameter<typename l_solver_type::Factory> solver)
+            deferred_factory_parameter<const typename l_solver_type::Factory>
+                solver)
         {
             this->l_solver_generator = std::move(solver);
             this->deferred_factories["l_solver"] = [](const auto& exec,
@@ -173,15 +146,17 @@ public:
             return *this;
         }
 
-        [[deprecated("use with_u_solver instead")]] parameters_type&
-        with_u_solver_factory(
-            deferred_factory_parameter<typename u_solver_type::Factory> solver)
+        GKO_DEPRECATED("use with_u_solver instead")
+        parameters_type& with_u_solver_factory(
+            deferred_factory_parameter<const typename u_solver_type::Factory>
+                solver)
         {
             return with_u_solver(std::move(solver));
         }
 
         parameters_type& with_u_solver(
-            deferred_factory_parameter<typename u_solver_type::Factory> solver)
+            deferred_factory_parameter<const typename u_solver_type::Factory>
+                solver)
         {
             this->u_solver_generator = std::move(solver);
             this->deferred_factories["u_solver"] = [](const auto& exec,
@@ -194,15 +169,15 @@ public:
             return *this;
         }
 
-        [[deprecated("use with_factorization instead")]] parameters_type&
-        with_factorization_factory(
-            deferred_factory_parameter<LinOpFactory> factorization)
+        GKO_DEPRECATED("use with_factorization instead")
+        parameters_type& with_factorization_factory(
+            deferred_factory_parameter<const LinOpFactory> factorization)
         {
             return with_factorization(std::move(factorization));
         }
 
         parameters_type& with_factorization(
-            deferred_factory_parameter<LinOpFactory> factorization)
+            deferred_factory_parameter<const LinOpFactory> factorization)
         {
             this->factorization_generator = std::move(factorization);
             this->deferred_factories["factorization"] = [](const auto& exec,
@@ -216,13 +191,13 @@ public:
         }
 
     private:
-        deferred_factory_parameter<typename l_solver_type::Factory>
+        deferred_factory_parameter<const typename l_solver_type::Factory>
             l_solver_generator;
 
-        deferred_factory_parameter<typename u_solver_type::Factory>
+        deferred_factory_parameter<const typename u_solver_type::Factory>
             u_solver_generator;
 
-        deferred_factory_parameter<LinOpFactory> factorization_generator;
+        deferred_factory_parameter<const LinOpFactory> factorization_generator;
     };
 
     GKO_ENABLE_LIN_OP_FACTORY(Ilu, parameters, Factory);

@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef GKO_PUBLIC_CORE_MATRIX_CSR_HPP_
 #define GKO_PUBLIC_CORE_MATRIX_CSR_HPP_
@@ -38,6 +10,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ginkgo/core/base/index_set.hpp>
 #include <ginkgo/core/base/lin_op.hpp>
 #include <ginkgo/core/base/math.hpp>
+#include <ginkgo/core/matrix/permutation.hpp>
+#include <ginkgo/core/matrix/scaled_permutation.hpp>
 
 
 namespace gko {
@@ -269,7 +243,7 @@ public:
                 row_ptrs_host = mtx_row_ptrs;
                 row_ptrs = row_ptrs_host.get_const_data();
             }
-            auto num_rows = mtx_row_ptrs.get_num_elems() - 1;
+            auto num_rows = mtx_row_ptrs.get_size() - 1;
             max_length_per_row_ = 0;
             for (size_type i = 0; i < num_rows; i++) {
                 max_length_per_row_ = std::max(max_length_per_row_,
@@ -435,7 +409,7 @@ public:
         void process(const array<index_type>& mtx_row_ptrs,
                      array<index_type>* mtx_srow) override
         {
-            auto nwarps = mtx_srow->get_num_elems();
+            auto nwarps = mtx_srow->get_size();
 
             if (nwarps > 0) {
                 auto host_srow_exec = mtx_srow->get_executor()->get_master();
@@ -463,7 +437,7 @@ public:
                 for (size_type i = 0; i < nwarps; i++) {
                     srow[i] = 0;
                 }
-                const auto num_rows = mtx_row_ptrs.get_num_elems() - 1;
+                const auto num_rows = mtx_row_ptrs.get_size() - 1;
                 const auto num_elems = row_ptrs[num_rows];
                 const auto bucket_divider =
                     num_elems > 0 ? ceildiv(num_elems, warp_size_) : 1;
@@ -650,7 +624,7 @@ public:
                 row_ptrs_host = mtx_row_ptrs;
                 row_ptrs = row_ptrs_host.get_const_data();
             }
-            const auto num_rows = mtx_row_ptrs.get_num_elems() - 1;
+            const auto num_rows = mtx_row_ptrs.get_size() - 1;
             if (row_ptrs[num_rows] > nnz_limit) {
                 load_balance actual_strategy(nwarps_, warp_size_,
                                              cuda_strategy_, strategy_name_);
@@ -762,6 +736,74 @@ public:
     std::unique_ptr<LinOp> transpose() const override;
 
     std::unique_ptr<LinOp> conj_transpose() const override;
+
+    /**
+     * Creates a permuted copy $A'$ of this matrix $A$ with the given
+     * permutation $P$. By default, this computes a symmetric permutation
+     * (permute_mode::symmetric). For the effect of the different permutation
+     * modes, see @ref permute_mode
+     *
+     * @param permutation  The input permutation.
+     * @param mode  The permutation mode. If permute_mode::inverse is set, we
+     *              use the inverse permutation $P^{-1}$ instead of $P$.
+     *              If permute_mode::rows is set, the rows will be permuted.
+     *              If permute_mode::columns is set, the columns will be
+     *              permuted.
+     * @return  The permuted matrix.
+     */
+    std::unique_ptr<Csr> permute(
+        ptr_param<const Permutation<index_type>> permutation,
+        permute_mode mode = permute_mode::symmetric) const;
+
+    /**
+     * Creates a non-symmetrically permuted copy $A'$ of this matrix $A$ with
+     * the given row and column permutations $P$ and $Q$. The operation will
+     * compute $A'(i, j) = A(p[i], q[j])$, or $A' = P A Q^T$ if `invert` is
+     * `false`, and $A'(p[i], q[j]) = A(i,j)$, or $A' = P^{-1} A Q^{-T}$ if
+     * `invert` is `true`.
+     *
+     * @param row_permutation  The permutation $P$ to apply to the rows
+     * @param column_permutation  The permutation $Q$ to apply to the columns
+     * @param invert  If set to `false`, uses the input permutations, otherwise
+     *                uses their inverses $P^{-1}, Q^{-1}$
+     * @return  The permuted matrix.
+     */
+    std::unique_ptr<Csr> permute(
+        ptr_param<const Permutation<index_type>> row_permutation,
+        ptr_param<const Permutation<index_type>> column_permutation,
+        bool invert = false) const;
+
+    /**
+     * Creates a scaled and permuted copy of this matrix.
+     * For an explanation of the permutation modes, see
+     * @ref permute(ptr_param<const Permutation<index_type>>, permute_mode)
+     *
+     * @param permutation  The scaled permutation.
+     * @param mode  The permutation mode.
+     * @return The permuted matrix.
+     */
+    std::unique_ptr<Csr> scale_permute(
+        ptr_param<const ScaledPermutation<value_type, index_type>> permutation,
+        permute_mode = permute_mode::symmetric) const;
+
+    /**
+     * Creates a scaled and permuted copy of this matrix.
+     * For an explanation of the parameters, see
+     * @ref permute(ptr_param<const Permutation<index_type>>, ptr_param<const
+     * Permutation<index_type>>, permute_mode)
+     *
+     * @param row_permutation  The scaled row permutation.
+     * @param column_permutation  The scaled column permutation.
+     * @param invert  If set to `false`, uses the input permutations, otherwise
+     *                uses their inverses $P^{-1}, Q^{-1}$
+     * @return The permuted matrix.
+     */
+    std::unique_ptr<Csr> scale_permute(
+        ptr_param<const ScaledPermutation<value_type, index_type>>
+            row_permutation,
+        ptr_param<const ScaledPermutation<value_type, index_type>>
+            column_permutation,
+        bool invert = false) const;
 
     std::unique_ptr<LinOp> permute(
         const array<IndexType>* permutation_indices) const override;
@@ -883,7 +925,7 @@ public:
      */
     size_type get_num_srow_elements() const noexcept
     {
-        return srow_.get_num_elems();
+        return srow_.get_size();
     }
 
     /**
@@ -893,7 +935,7 @@ public:
      */
     size_type get_num_stored_elements() const noexcept
     {
-        return values_.get_num_elems();
+        return values_.get_size();
     }
 
     /** Returns the strategy
@@ -1118,8 +1160,8 @@ protected:
           srow_(exec),
           strategy_(strategy->copy())
     {
-        GKO_ASSERT_EQ(values_.get_num_elems(), col_idxs_.get_num_elems());
-        GKO_ASSERT_EQ(this->get_size()[0] + 1, row_ptrs_.get_num_elems());
+        GKO_ASSERT_EQ(values_.get_size(), col_idxs_.get_size());
+        GKO_ASSERT_EQ(this->get_size()[0] + 1, row_ptrs_.get_size());
         this->make_srow();
     }
 
@@ -1274,7 +1316,7 @@ protected:
      */
     void make_srow()
     {
-        srow_.resize_and_reset(strategy_->clac_size(values_.get_num_elems()));
+        srow_.resize_and_reset(strategy_->clac_size(values_.get_size()));
         strategy_->process(row_ptrs_, &srow_);
     }
 

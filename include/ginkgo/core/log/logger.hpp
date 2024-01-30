@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef GKO_PUBLIC_CORE_LOG_LOGGER_HPP_
 #define GKO_PUBLIC_CORE_LOG_LOGGER_HPP_
@@ -64,6 +36,9 @@ namespace batch {
 
 class BatchLinOp;
 class BatchLinOpFactory;
+
+template <typename ValueType>
+class MultiVector;
 
 
 }  // namespace batch
@@ -459,12 +434,12 @@ protected:
      * @warning This on_iteration_complete function that this macro declares is
      * deprecated. Please use the version with the stopping information.
      */
-    [[deprecated(
+    GKO_DEPRECATED(
         "Please use the version with the additional stopping "
-        "information.")]] virtual void
-    on_iteration_complete(const LinOp* solver, const size_type& it,
-                          const LinOp* r, const LinOp* x = nullptr,
-                          const LinOp* tau = nullptr) const
+        "information.")
+    virtual void on_iteration_complete(const LinOp* solver, const size_type& it,
+                                       const LinOp* r, const LinOp* x = nullptr,
+                                       const LinOp* tau = nullptr) const
     {}
 
     /**
@@ -480,28 +455,17 @@ protected:
      * @warning This on_iteration_complete function that this macro declares is
      * deprecated. Please use the version with the stopping information.
      */
-    [[deprecated(
+    GKO_DEPRECATED(
         "Please use the version with the additional stopping "
-        "information.")]] virtual void
-    on_iteration_complete(const LinOp* solver, const size_type& it,
-                          const LinOp* r, const LinOp* x, const LinOp* tau,
-                          const LinOp* implicit_tau_sq) const
+        "information.")
+    virtual void on_iteration_complete(const LinOp* solver, const size_type& it,
+                                       const LinOp* r, const LinOp* x,
+                                       const LinOp* tau,
+                                       const LinOp* implicit_tau_sq) const
     {
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 5211, 4973, 4974)
-#endif
+        GKO_BEGIN_DISABLE_DEPRECATION_WARNINGS
         this->on_iteration_complete(solver, it, r, x, tau);
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
+        GKO_END_DISABLE_DEPRECATION_WARNINGS
     }
 
     /**
@@ -526,27 +490,9 @@ protected:
                                        const array<stopping_status>* status,
                                        bool stopped) const
     {
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif  // defined(__GNUC__) || defined(__clang__)
-#ifdef __NVCOMPILER
-#pragma diag_suppress 1445
-#endif  // __NVCOMPILER
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 5211, 4973, 4974)
-#endif  // _MSC_VER
+        GKO_BEGIN_DISABLE_DEPRECATION_WARNINGS
         this->on_iteration_complete(solver, it, r, x, tau, implicit_tau_sq);
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic pop
-#endif  // defined(__GNUC__) || defined(__clang__)
-#ifdef __NVCOMPILER
-#pragma diag_warning 1445
-#endif  // __NVCOMPILER
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif  // _MSC_VER
+        GKO_END_DISABLE_DEPRECATION_WARNINGS
     }
 
 public:
@@ -598,6 +544,43 @@ public:
                               const batch::BatchLinOp* input,
                               const batch::BatchLinOp* output)
 
+public:
+    static constexpr size_type batch_solver_completed{26};
+    static constexpr mask_type batch_solver_completed_mask{mask_type{1} << 26};
+
+    template <size_type Event, typename... Params>
+    std::enable_if_t<Event == 26 && (26 < event_count_max)> on(
+        Params&&... params) const
+    {
+        if (enabled_events_ & batch_solver_completed_mask) {
+            this->on_batch_solver_completed(std::forward<Params>(params)...);
+        }
+    }
+
+protected:
+    /**
+     * Batch solver's event that records the iteration count and the residual
+     * norm.
+     *
+     * @param iters  the array of iteration counts.
+     * @param residual_norms  the array storing the residual norms.
+     */
+    virtual void on_batch_solver_completed(
+        const array<int>& iters, const array<double>& residual_norms) const
+    {}
+
+    /**
+     * Batch solver's event that records the iteration count and the residual
+     * norm.
+     *
+     * @param iters  the array of iteration counts.
+     * @param residual_norms  the array storing the residual norms.
+     */
+    virtual void on_batch_solver_completed(
+        const array<int>& iters, const array<float>& residual_norms) const
+    {}
+
+public:
 #undef GKO_LOGGER_REGISTER_EVENT
 
     /**
@@ -676,9 +659,9 @@ protected:
      *                           logs every event except linop's apply started
      *                           event.
      */
-    [[deprecated("use single-parameter constructor")]] explicit Logger(
-        std::shared_ptr<const gko::Executor> exec,
-        const mask_type& enabled_events = all_events_mask)
+    GKO_DEPRECATED("use single-parameter constructor")
+    explicit Logger(std::shared_ptr<const gko::Executor> exec,
+                    const mask_type& enabled_events = all_events_mask)
         : Logger{enabled_events}
     {}
 

@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #include <map>
 #include <unordered_set>
@@ -38,6 +10,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 
 #include "benchmark/sparse_blas/operations.hpp"
+#include "core/base/array_access.hpp"
 #include "core/factorization/elimination_forest.hpp"
 #include "core/factorization/symbolic.hpp"
 #include "core/matrix/csr_kernels.hpp"
@@ -64,10 +37,10 @@ DEFINE_int32(
     "Maximum distance for row swaps to avoid rows with disjoint column ranges");
 
 DEFINE_string(spgemm_mode, "normal",
-              R"(Which matrix B should be used to compute A * B: normal, 
+              R"(Which matrix B should be used to compute A * B: normal,
 transposed, sparse, dense
 normal: B = A for A square, A^T otherwise\ntransposed: B = A^T
-sparse: B is a sparse matrix with dimensions of A^T with uniformly 
+sparse: B is a sparse matrix with dimensions of A^T with uniformly
         random values, at most -spgemm_rowlength non-zeros per row
 dense: B is a 'dense' sparse matrix with -spgemm_rowlength columns
        and non-zeros per row)");
@@ -151,7 +124,7 @@ public:
                                                            get_engine()));
                 }
             }
-            data.ensure_row_major_order();
+            data.sort_row_major();
             mtx2_ = Mtx::create(exec, size2);
             mtx2_->read(data);
         } else if (mode_str == "dense") {
@@ -159,7 +132,7 @@ public:
             std::uniform_real_distribution<gko::remove_complex<etype>> dist(
                 -1.0, 1.0);
             gko::matrix_data<etype, itype> data{size2, dist, get_engine()};
-            data.ensure_row_major_order();
+            data.sort_row_major();
             mtx2_ = Mtx::create(exec, size2);
             mtx2_->read(data);
         } else {
@@ -421,8 +394,7 @@ public:
         exec->run(make_build_lookup_offsets(
             mtx_->get_const_row_ptrs(), mtx_->get_const_col_idxs(), num_rows,
             allowed_sparsity_, storage_offsets_.get_data()));
-        storage_.resize_and_reset(exec->copy_val_to_host(
-            storage_offsets_.get_const_data() + num_rows));
+        storage_.resize_and_reset(get_element(storage_offsets_, num_rows));
     }
 
     std::pair<bool, double> validate() const override
@@ -461,7 +433,7 @@ public:
         // read sparsity pattern and row pointers once, write lookup structures
         return mtx_->get_num_stored_elements() * sizeof(itype) +
                mtx_->get_size()[0] * (2 * sizeof(itype) + sizeof(gko::int64)) +
-               storage_.get_num_elems() * sizeof(gko::int32);
+               storage_.get_size() * sizeof(gko::int32);
     }
 
     void run() override
@@ -507,8 +479,7 @@ public:
         exec->run(make_build_lookup_offsets(
             mtx_->get_const_row_ptrs(), mtx_->get_const_col_idxs(), num_rows,
             allowed_sparsity_, storage_offsets_.get_data()));
-        storage_.resize_and_reset(exec->copy_val_to_host(
-            storage_offsets_.get_const_data() + num_rows));
+        storage_.resize_and_reset(get_element(storage_offsets_, num_rows));
         exec->run(make_build_lookup(
             mtx_->get_const_row_ptrs(), mtx_->get_const_col_idxs(), num_rows,
             allowed_sparsity_, storage_offsets_.get_const_data(),
@@ -546,7 +517,7 @@ public:
         // column index and write a result
         return mtx_->get_size()[0] * (2 * sizeof(itype) + sizeof(gko::int64) +
                                       sample_size_ * 2 * sizeof(itype)) +
-               storage_.get_num_elems() * sizeof(gko::int32);
+               storage_.get_size() * sizeof(gko::int32);
     }
 
     void run() override
@@ -642,6 +613,37 @@ private:
 };
 
 
+class SymbolicLuNearSymmOperation : public BenchmarkOperation {
+public:
+    explicit SymbolicLuNearSymmOperation(const Mtx* mtx) : mtx_{mtx}, result_{}
+    {}
+
+    std::pair<bool, double> validate() const override
+    {
+        return std::make_pair(
+            validate_symbolic_factorization(mtx_, result_.get()), 0.0);
+    }
+
+    gko::size_type get_flops() const override { return 0; }
+
+    gko::size_type get_memory() const override { return 0; }
+
+    void run() override
+    {
+        gko::factorization::symbolic_lu_near_symm(mtx_, result_);
+    }
+
+    void write_stats(json& object) override
+    {
+        object["factor_nonzeros"] = result_->get_num_stored_elements();
+    }
+
+private:
+    const Mtx* mtx_;
+    std::unique_ptr<Mtx> result_;
+};
+
+
 class SymbolicCholeskyOperation : public BenchmarkOperation {
 public:
     explicit SymbolicCholeskyOperation(const Mtx* mtx, bool symmetric)
@@ -691,7 +693,8 @@ private:
 
 
 class ReorderRcmOperation : public BenchmarkOperation {
-    using reorder_type = gko::reorder::Rcm<etype, itype>;
+    using reorder_type = gko::experimental::reorder::Rcm<itype>;
+    using permute_type = gko::matrix::Permutation<itype>;
 
 public:
     explicit ReorderRcmOperation(const Mtx* mtx)
@@ -715,8 +718,8 @@ public:
 
 private:
     std::shared_ptr<Mtx> mtx_;
-    std::unique_ptr<reorder_type::Factory> factory_;
-    std::unique_ptr<reorder_type> reorder_;
+    std::unique_ptr<reorder_type> factory_;
+    std::unique_ptr<permute_type> reorder_;
 };
 
 
@@ -815,6 +818,10 @@ const std::map<std::string,
         {"symbolic_lu",
          [](const Mtx* mtx) {
              return std::make_unique<SymbolicLuOperation>(mtx);
+         }},
+        {"symbolic_lu_near_symm",
+         [](const Mtx* mtx) {
+             return std::make_unique<SymbolicLuNearSymmOperation>(mtx);
          }},
         {"symbolic_cholesky",
          [](const Mtx* mtx) {

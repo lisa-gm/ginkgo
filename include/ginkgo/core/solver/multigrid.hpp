@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef GKO_PUBLIC_CORE_SOLVER_MULTIGRID_HPP_
 #define GKO_PUBLIC_CORE_SOLVER_MULTIGRID_HPP_
@@ -225,7 +197,8 @@ public:
         /**
          * MultigridLevel Factory list
          */
-        GKO_DEFERRED_FACTORY_VECTOR_PARAMETER(mg_level, LinOpFactory);
+        std::vector<std::shared_ptr<const LinOpFactory>>
+            GKO_DEFERRED_FACTORY_VECTOR_PARAMETER(mg_level);
 
         /**
          * Custom selector size_type (size_type level, const LinOp* fine_matrix)
@@ -270,14 +243,16 @@ public:
          * If any element in the vector is a `nullptr` then the smoother
          * application at the corresponding level is skipped.
          */
-        GKO_DEFERRED_FACTORY_VECTOR_PARAMETER(pre_smoother, LinOpFactory);
+        std::vector<std::shared_ptr<const LinOpFactory>>
+            GKO_DEFERRED_FACTORY_VECTOR_PARAMETER(pre_smoother);
 
         /**
          * Post-smooth Factory list.
          * It is similar to Pre-smooth Factory list. It is ignored if
          * the factory parameter post_uses_pre is set to true.
          */
-        GKO_DEFERRED_FACTORY_VECTOR_PARAMETER(post_smoother, LinOpFactory);
+        std::vector<std::shared_ptr<const LinOpFactory>>
+            GKO_DEFERRED_FACTORY_VECTOR_PARAMETER(post_smoother);
 
         /**
          * Mid-smooth Factory list. If it contains available elements, multigrid
@@ -286,7 +261,8 @@ public:
          * Pre-smooth Factory list. It is ignored if the factory parameter
          * mid_case is not mid.
          */
-        GKO_DEFERRED_FACTORY_VECTOR_PARAMETER(mid_smoother, LinOpFactory);
+        std::vector<std::shared_ptr<const LinOpFactory>>
+            GKO_DEFERRED_FACTORY_VECTOR_PARAMETER(mid_smoother);
 
         /**
          * Whether post-smoothing-related calls use corresponding
@@ -326,7 +302,8 @@ public:
          * If not set, then a direct LU solver will be used as solver on the
          * coarsest level.
          */
-        GKO_DEFERRED_FACTORY_VECTOR_PARAMETER(coarsest_solver, LinOpFactory);
+        std::vector<std::shared_ptr<const LinOpFactory>>
+            GKO_DEFERRED_FACTORY_VECTOR_PARAMETER(coarsest_solver);
 
         /**
          * Custom coarsest_solver selector

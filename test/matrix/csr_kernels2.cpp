@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #include <ginkgo/core/matrix/csr.hpp>
 
@@ -48,6 +20,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ginkgo/core/matrix/ell.hpp>
 #include <ginkgo/core/matrix/hybrid.hpp>
 #include <ginkgo/core/matrix/identity.hpp>
+#include <ginkgo/core/matrix/permutation.hpp>
+#include <ginkgo/core/matrix/scaled_permutation.hpp>
 #include <ginkgo/core/matrix/sellp.hpp>
 #include <ginkgo/core/matrix/sparsity_csr.hpp>
 
@@ -55,6 +29,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include "core/components/prefix_sum_kernels.hpp"
 #include "core/matrix/csr_kernels.hpp"
 #include "core/test/utils.hpp"
+#include "core/test/utils/assertions.hpp"
 #include "core/test/utils/unsort_matrix.hpp"
 #include "core/utils/matrix_utils.hpp"
 #include "test/utils/executor.hpp"
@@ -68,6 +43,8 @@ protected:
     using Mtx = gko::matrix::Csr<value_type>;
     using ComplexVec = gko::matrix::Dense<std::complex<value_type>>;
     using ComplexMtx = gko::matrix::Csr<std::complex<value_type>>;
+    using Perm = gko::matrix::Permutation<index_type>;
+    using ScaledPerm = gko::matrix::ScaledPermutation<value_type, index_type>;
 
     Csr()
 #ifdef GINKGO_FAST_TESTS
@@ -162,8 +139,8 @@ protected:
         beta2 = gko::initialize<Vec2>({-1.0}, ref);
         dmtx = Mtx::create(exec, strategy);
         dmtx->copy_from(mtx);
-        square_dmtx = Mtx::create(exec, strategy);
-        square_dmtx->copy_from(square_mtx);
+        dsquare_mtx = Mtx::create(exec, strategy);
+        dsquare_mtx->copy_from(square_mtx);
         dresult = gko::clone(exec, expected);
         dresult2 = gko::clone(exec, expected2);
         dy = gko::clone(exec, y);
@@ -180,8 +157,22 @@ protected:
         std::vector<int> tmp2(mtx->get_size()[1], 0);
         std::iota(tmp2.begin(), tmp2.end(), 0);
         std::shuffle(tmp2.begin(), tmp2.end(), rng);
+        std::vector<value_type> scale(mtx->get_size()[0]);
+        std::vector<value_type> scale2(mtx->get_size()[1]);
+        std::uniform_real_distribution<value_type> dist(1, 2);
+        auto gen = [&] { return dist(rng); };
+        std::generate(scale.begin(), scale.end(), gen);
+        std::generate(scale2.begin(), scale2.end(), gen);
         rpermute_idxs = std::make_unique<Arr>(ref, tmp.begin(), tmp.end());
         cpermute_idxs = std::make_unique<Arr>(ref, tmp2.begin(), tmp2.end());
+        rpermutation = Perm::create(ref, *rpermute_idxs);
+        cpermutation = Perm::create(ref, *cpermute_idxs);
+        srpermutation = ScaledPerm::create(
+            ref, gko::array<value_type>(ref, scale.begin(), scale.end()),
+            *rpermute_idxs);
+        scpermutation = ScaledPerm::create(
+            ref, gko::array<value_type>(ref, scale2.begin(), scale2.end()),
+            *cpermute_idxs);
     }
 
     template <typename StrategyType>
@@ -192,8 +183,8 @@ protected:
         complex_mtx = ComplexMtx::create(ref, strategy);
         complex_mtx->move_from(
             gen_mtx<ComplexVec>(mtx_size[0], mtx_size[1], 1));
-        complex_dmtx = ComplexMtx::create(exec, strategy);
-        complex_dmtx->copy_from(complex_mtx);
+        dcomplex_mtx = ComplexMtx::create(exec, strategy);
+        dcomplex_mtx->copy_from(complex_mtx);
     }
 
     void unsort_mtx()
@@ -220,8 +211,8 @@ protected:
 
     std::unique_ptr<Mtx> dmtx;
     std::unique_ptr<Mtx> dmtx2;
-    std::unique_ptr<ComplexMtx> complex_dmtx;
-    std::unique_ptr<Mtx> square_dmtx;
+    std::unique_ptr<ComplexMtx> dcomplex_mtx;
+    std::unique_ptr<Mtx> dsquare_mtx;
     std::unique_ptr<Vec> dresult;
     std::unique_ptr<Vec2> dresult2;
     std::unique_ptr<Vec> dy;
@@ -232,6 +223,10 @@ protected:
     std::unique_ptr<Vec2> dbeta2;
     std::unique_ptr<Arr> rpermute_idxs;
     std::unique_ptr<Arr> cpermute_idxs;
+    std::unique_ptr<Perm> rpermutation;
+    std::unique_ptr<Perm> cpermutation;
+    std::unique_ptr<ScaledPerm> srpermutation;
+    std::unique_ptr<ScaledPerm> scpermutation;
 };
 
 
@@ -510,11 +505,11 @@ TEST_F(Csr, AdvancedApplyToCsrMatrixIsEquivalentToRef)
     auto d_trans = dmtx->transpose();
 
     mtx->apply(alpha, trans, beta, square_mtx);
-    dmtx->apply(dalpha, d_trans, dbeta, square_dmtx);
+    dmtx->apply(dalpha, d_trans, dbeta, dsquare_mtx);
 
-    GKO_ASSERT_MTX_NEAR(square_dmtx, square_mtx, r<value_type>::value);
-    GKO_ASSERT_MTX_EQ_SPARSITY(square_dmtx, square_mtx);
-    ASSERT_TRUE(square_dmtx->is_sorted_by_column_index());
+    GKO_ASSERT_MTX_NEAR(dsquare_mtx, square_mtx, r<value_type>::value);
+    GKO_ASSERT_MTX_EQ_SPARSITY(dsquare_mtx, square_mtx);
+    ASSERT_TRUE(dsquare_mtx->is_sorted_by_column_index());
 }
 
 
@@ -525,11 +520,11 @@ TEST_F(Csr, SimpleApplyToCsrMatrixIsEquivalentToRef)
     auto d_trans = dmtx->transpose();
 
     mtx->apply(trans, square_mtx);
-    dmtx->apply(d_trans, square_dmtx);
+    dmtx->apply(d_trans, dsquare_mtx);
 
-    GKO_ASSERT_MTX_NEAR(square_dmtx, square_mtx, r<value_type>::value);
-    GKO_ASSERT_MTX_EQ_SPARSITY(square_dmtx, square_mtx);
-    ASSERT_TRUE(square_dmtx->is_sorted_by_column_index());
+    GKO_ASSERT_MTX_NEAR(dsquare_mtx, square_mtx, r<value_type>::value);
+    GKO_ASSERT_MTX_EQ_SPARSITY(dsquare_mtx, square_mtx);
+    ASSERT_TRUE(dsquare_mtx->is_sorted_by_column_index());
 }
 
 
@@ -542,11 +537,11 @@ TEST_F(Csr, SimpleApplyToSparseCsrMatrixIsEquivalentToRef)
     dmtx2->copy_from(mtx2);
 
     mtx->apply(mtx2, square_mtx);
-    dmtx->apply(dmtx2, square_dmtx);
+    dmtx->apply(dmtx2, dsquare_mtx);
 
-    GKO_ASSERT_MTX_EQ_SPARSITY(square_dmtx, square_mtx);
-    GKO_ASSERT_MTX_NEAR(square_dmtx, square_mtx, r<value_type>::value);
-    ASSERT_TRUE(square_dmtx->is_sorted_by_column_index());
+    GKO_ASSERT_MTX_EQ_SPARSITY(dsquare_mtx, square_mtx);
+    GKO_ASSERT_MTX_NEAR(dsquare_mtx, square_mtx, r<value_type>::value);
+    ASSERT_TRUE(dsquare_mtx->is_sorted_by_column_index());
 }
 
 
@@ -560,11 +555,11 @@ TEST_F(Csr, SimpleApplySparseToSparseCsrMatrixIsEquivalentToRef)
     auto dmtx2 = gko::clone(exec, mtx2);
 
     mtx1->apply(mtx2, square_mtx);
-    dmtx1->apply(dmtx2, square_dmtx);
+    dmtx1->apply(dmtx2, dsquare_mtx);
 
-    GKO_ASSERT_MTX_EQ_SPARSITY(square_dmtx, square_mtx);
-    GKO_ASSERT_MTX_NEAR(square_dmtx, square_mtx, r<value_type>::value);
-    ASSERT_TRUE(square_dmtx->is_sorted_by_column_index());
+    GKO_ASSERT_MTX_EQ_SPARSITY(dsquare_mtx, square_mtx);
+    GKO_ASSERT_MTX_NEAR(dsquare_mtx, square_mtx, r<value_type>::value);
+    ASSERT_TRUE(dsquare_mtx->is_sorted_by_column_index());
 }
 
 
@@ -581,11 +576,11 @@ TEST_F(Csr, SimpleApplyToEmptyCsrMatrixIsEquivalentToRef)
     dmtx2->copy_from(mtx2);
 
     mtx->apply(mtx2, square_mtx);
-    dmtx->apply(dmtx2, square_dmtx);
+    dmtx->apply(dmtx2, dsquare_mtx);
 
-    GKO_ASSERT_MTX_EQ_SPARSITY(square_dmtx, square_mtx);
-    GKO_ASSERT_MTX_NEAR(square_dmtx, square_mtx, r<value_type>::value);
-    ASSERT_TRUE(square_dmtx->is_sorted_by_column_index());
+    GKO_ASSERT_MTX_EQ_SPARSITY(dsquare_mtx, square_mtx);
+    GKO_ASSERT_MTX_NEAR(dsquare_mtx, square_mtx, r<value_type>::value);
+    ASSERT_TRUE(dsquare_mtx->is_sorted_by_column_index());
 }
 
 
@@ -673,7 +668,7 @@ TEST_F(Csr, ConjugateTransposeIsEquivalentToRef)
     set_up_apply_complex_data<ComplexMtx::classical>();
 
     auto trans = gko::as<ComplexMtx>(complex_mtx->conj_transpose());
-    auto d_trans = gko::as<ComplexMtx>(complex_dmtx->conj_transpose());
+    auto d_trans = gko::as<ComplexMtx>(dcomplex_mtx->conj_transpose());
 
     GKO_ASSERT_MTX_NEAR(d_trans, trans, 0.0);
     ASSERT_TRUE(d_trans->is_sorted_by_column_index());
@@ -868,12 +863,176 @@ TEST_F(Csr, MoveToHybridIsEquivalentToRef)
 }
 
 
+TEST_F(Csr, IsGenericPermutable)
+{
+    using gko::matrix::permute_mode;
+    set_up_apply_data<Mtx::classical>();
+
+    for (auto mode :
+         {permute_mode::none, permute_mode::rows, permute_mode::columns,
+          permute_mode::symmetric, permute_mode::inverse_rows,
+          permute_mode::inverse_columns, permute_mode::inverse_symmetric}) {
+        SCOPED_TRACE(mode);
+        auto permuted = square_mtx->permute(rpermutation, mode);
+        auto dpermuted = dsquare_mtx->permute(rpermutation, mode);
+
+        GKO_ASSERT_MTX_NEAR(permuted, dpermuted, 0);
+        GKO_ASSERT_MTX_EQ_SPARSITY(permuted, dpermuted);
+        ASSERT_TRUE(dpermuted->is_sorted_by_column_index());
+    }
+}
+
+
+TEST_F(Csr, IsColPermutableHypersparse)
+{
+    using gko::matrix::permute_mode;
+    auto hypersparse_mtx = gko::initialize<Mtx>(
+        {{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 0.0, 2.0}}, ref);
+    auto dhypersparse_mtx = hypersparse_mtx->clone();
+    auto perm3 = Perm::create(ref, gko::array<index_type>{ref, {1, 2, 0}});
+
+    for (auto mode : {permute_mode::columns, permute_mode::inverse_columns}) {
+        SCOPED_TRACE(mode);
+        auto permuted = hypersparse_mtx->permute(perm3, mode);
+        auto dpermuted = dhypersparse_mtx->permute(perm3, mode);
+
+        GKO_ASSERT_MTX_NEAR(permuted, dpermuted, 0);
+        GKO_ASSERT_MTX_EQ_SPARSITY(permuted, dpermuted);
+        ASSERT_TRUE(dpermuted->is_sorted_by_column_index());
+    }
+}
+
+
+TEST_F(Csr, IsGenericPermutableRectangular)
+{
+    using gko::matrix::permute_mode;
+    set_up_apply_data<Mtx::classical>();
+
+    for (auto mode :
+         {permute_mode::rows, permute_mode::columns, permute_mode::inverse_rows,
+          permute_mode::inverse_columns}) {
+        SCOPED_TRACE(mode);
+        auto perm = (mode & permute_mode::rows) == permute_mode::rows
+                        ? rpermutation.get()
+                        : cpermutation.get();
+
+        auto permuted = mtx->permute(perm, mode);
+        auto dpermuted = dmtx->permute(perm, mode);
+
+        GKO_ASSERT_MTX_NEAR(permuted, dpermuted, 0);
+        GKO_ASSERT_MTX_EQ_SPARSITY(permuted, dpermuted);
+        ASSERT_TRUE(dpermuted->is_sorted_by_column_index());
+    }
+}
+
+
+TEST_F(Csr, IsNonsymmPermutable)
+{
+    using gko::matrix::permute_mode;
+    set_up_apply_data<Mtx::classical>();
+
+    for (auto invert : {false, true}) {
+        SCOPED_TRACE(invert);
+        auto permuted = mtx->permute(rpermutation, cpermutation, invert);
+        auto dpermuted = dmtx->permute(rpermutation, cpermutation, invert);
+
+        GKO_ASSERT_MTX_NEAR(permuted, dpermuted, 0);
+        GKO_ASSERT_MTX_EQ_SPARSITY(permuted, dpermuted);
+        ASSERT_TRUE(dpermuted->is_sorted_by_column_index());
+    }
+}
+
+
+TEST_F(Csr, IsGenericScalePermutable)
+{
+    using gko::matrix::permute_mode;
+    set_up_apply_data<Mtx::classical>();
+
+    for (auto mode :
+         {permute_mode::none, permute_mode::rows, permute_mode::columns,
+          permute_mode::symmetric, permute_mode::inverse_rows,
+          permute_mode::inverse_columns, permute_mode::inverse_symmetric}) {
+        SCOPED_TRACE(mode);
+        auto permuted = square_mtx->scale_permute(srpermutation, mode);
+        auto dpermuted = dsquare_mtx->scale_permute(srpermutation, mode);
+
+        GKO_EXPECT_MTX_NEAR(permuted, dpermuted, r<value_type>::value);
+        GKO_EXPECT_MTX_EQ_SPARSITY(permuted, dpermuted);
+        EXPECT_TRUE(dpermuted->is_sorted_by_column_index());
+    }
+}
+
+
+TEST_F(Csr, IsColScalePermutableHypersparse)
+{
+    using gko::matrix::permute_mode;
+    auto hypersparse_mtx = gko::initialize<Mtx>(
+        {{0.0, 0.0, 0.0}, {1.0, 0.0, 0.0}, {0.0, 0.0, 2.0}}, ref);
+    auto dhypersparse_mtx = hypersparse_mtx->clone();
+    auto perm3 =
+        ScaledPerm::create(ref, gko::array<value_type>{ref, {1.0, 2.0, 4.0}},
+                           gko::array<index_type>{ref, {1, 2, 0}});
+
+    for (auto mode : {permute_mode::columns, permute_mode::inverse_columns}) {
+        SCOPED_TRACE(mode);
+        auto permuted = hypersparse_mtx->scale_permute(perm3, mode);
+        auto dpermuted = dhypersparse_mtx->scale_permute(perm3, mode);
+
+        GKO_ASSERT_MTX_NEAR(permuted, dpermuted, r<value_type>::value);
+        GKO_ASSERT_MTX_EQ_SPARSITY(permuted, dpermuted);
+        ASSERT_TRUE(dpermuted->is_sorted_by_column_index());
+    }
+}
+
+
+TEST_F(Csr, IsGenericScalePermutableRectangular)
+{
+    using gko::matrix::permute_mode;
+    set_up_apply_data<Mtx::classical>();
+
+    for (auto mode :
+         {permute_mode::rows, permute_mode::columns, permute_mode::inverse_rows,
+          permute_mode::inverse_columns}) {
+        SCOPED_TRACE(mode);
+        auto perm = (mode & permute_mode::rows) == permute_mode::rows
+                        ? srpermutation.get()
+                        : scpermutation.get();
+
+        auto permuted = mtx->scale_permute(perm, mode);
+        auto dpermuted = dmtx->scale_permute(perm, mode);
+
+        GKO_ASSERT_MTX_NEAR(permuted, dpermuted, r<value_type>::value);
+        GKO_ASSERT_MTX_EQ_SPARSITY(permuted, dpermuted);
+        ASSERT_TRUE(dpermuted->is_sorted_by_column_index());
+    }
+}
+
+
+TEST_F(Csr, IsNonsymmScalePermutable)
+{
+    using gko::matrix::permute_mode;
+    set_up_apply_data<Mtx::classical>();
+
+    for (auto invert : {false, true}) {
+        SCOPED_TRACE(invert);
+        auto permuted =
+            mtx->scale_permute(srpermutation, scpermutation, invert);
+        auto dpermuted =
+            dmtx->scale_permute(srpermutation, scpermutation, invert);
+
+        GKO_EXPECT_MTX_NEAR(permuted, dpermuted, r<value_type>::value);
+        GKO_EXPECT_MTX_EQ_SPARSITY(permuted, dpermuted);
+        EXPECT_TRUE(dpermuted->is_sorted_by_column_index());
+    }
+}
+
+
 TEST_F(Csr, IsPermutable)
 {
     set_up_apply_data<Mtx::classical>();
 
     auto permuted = gko::as<Mtx>(square_mtx->permute(rpermute_idxs.get()));
-    auto dpermuted = gko::as<Mtx>(square_dmtx->permute(rpermute_idxs.get()));
+    auto dpermuted = gko::as<Mtx>(dsquare_mtx->permute(rpermute_idxs.get()));
 
     GKO_ASSERT_MTX_EQ_SPARSITY(permuted, dpermuted);
     GKO_ASSERT_MTX_NEAR(permuted, dpermuted, 0);
@@ -887,7 +1046,7 @@ TEST_F(Csr, IsInversePermutable)
     auto permuted =
         gko::as<Mtx>(square_mtx->inverse_permute(rpermute_idxs.get()));
     auto dpermuted =
-        gko::as<Mtx>(square_dmtx->inverse_permute(rpermute_idxs.get()));
+        gko::as<Mtx>(dsquare_mtx->inverse_permute(rpermute_idxs.get()));
 
     GKO_ASSERT_MTX_EQ_SPARSITY(permuted, dpermuted);
     GKO_ASSERT_MTX_NEAR(permuted, dpermuted, 0);
@@ -1141,9 +1300,9 @@ TEST_F(Csr, InplaceAbsoluteComplexMatrixIsEquivalentToRef)
     set_up_apply_complex_data<ComplexMtx::classical>();
 
     complex_mtx->compute_absolute_inplace();
-    complex_dmtx->compute_absolute_inplace();
+    dcomplex_mtx->compute_absolute_inplace();
 
-    GKO_ASSERT_MTX_NEAR(complex_mtx, complex_dmtx, r<value_type>::value);
+    GKO_ASSERT_MTX_NEAR(complex_mtx, dcomplex_mtx, r<value_type>::value);
 }
 
 
@@ -1152,7 +1311,7 @@ TEST_F(Csr, OutplaceAbsoluteComplexMatrixIsEquivalentToRef)
     set_up_apply_complex_data<ComplexMtx::classical>();
 
     auto abs_mtx = complex_mtx->compute_absolute();
-    auto dabs_mtx = complex_dmtx->compute_absolute();
+    auto dabs_mtx = dcomplex_mtx->compute_absolute();
 
     GKO_ASSERT_MTX_NEAR(abs_mtx, dabs_mtx, r<value_type>::value);
 }
@@ -1189,7 +1348,7 @@ TEST_F(Csr, ComputeSubmatrixIsEquivalentToRef)
     gko::kernels::reference::csr::calculate_nonzeros_per_row_in_span(
         this->ref, this->mtx2.get(), rspan, cspan, &row_nnz);
     gko::kernels::reference::components::prefix_sum_nonnegative(
-        this->ref, row_nnz.get_data(), row_nnz.get_num_elems());
+        this->ref, row_nnz.get_data(), row_nnz.get_size());
     auto num_nnz = row_nnz.get_data()[rspan.length()];
     auto drow_nnz = gko::array<int>(this->exec, row_nnz);
     auto smat1 =
@@ -1226,7 +1385,7 @@ TEST_F(Csr, CalculateNnzPerRowInIndexSetIsEquivalentToRef)
                                     {42, 22, 24, 26, 28, 30, 81, 82, 83, 88}};
     gko::index_set<index_type> drset(this->exec, rset);
     gko::index_set<index_type> dcset(this->exec, cset);
-    auto row_nnz = gko::array<int>(this->ref, rset.get_num_elems() + 1);
+    auto row_nnz = gko::array<int>(this->ref, rset.get_size() + 1);
     row_nnz.fill(gko::zero<int>());
     auto drow_nnz = gko::array<int>(this->exec, row_nnz);
 
@@ -1249,24 +1408,24 @@ TEST_F(Csr, ComputeSubmatrixFromIndexSetIsEquivalentToRef)
                                     {42, 22, 24, 26, 28, 30, 81, 82, 83, 88}};
     gko::index_set<index_type> drset(this->exec, rset);
     gko::index_set<index_type> dcset(this->exec, cset);
-    auto row_nnz = gko::array<int>(this->ref, rset.get_num_elems() + 1);
+    auto row_nnz = gko::array<int>(this->ref, rset.get_size() + 1);
     row_nnz.fill(gko::zero<int>());
     gko::kernels::reference::csr::calculate_nonzeros_per_row_in_index_set(
         this->ref, this->mtx2.get(), rset, cset, row_nnz.get_data());
     gko::kernels::reference::components::prefix_sum_nonnegative(
-        this->ref, row_nnz.get_data(), row_nnz.get_num_elems());
-    auto num_nnz = row_nnz.get_data()[rset.get_num_elems()];
+        this->ref, row_nnz.get_data(), row_nnz.get_size());
+    auto num_nnz = row_nnz.get_data()[rset.get_size()];
     auto drow_nnz = gko::array<int>(this->exec, row_nnz);
-    auto smat1 = Mtx::create(
-        this->ref, gko::dim<2>(rset.get_num_elems(), cset.get_num_elems()),
-        std::move(gko::array<value_type>(this->ref, num_nnz)),
-        std::move(gko::array<index_type>(this->ref, num_nnz)),
-        std::move(row_nnz));
-    auto sdmat1 = Mtx::create(
-        this->exec, gko::dim<2>(rset.get_num_elems(), cset.get_num_elems()),
-        std::move(gko::array<value_type>(this->exec, num_nnz)),
-        std::move(gko::array<index_type>(this->exec, num_nnz)),
-        std::move(drow_nnz));
+    auto smat1 =
+        Mtx::create(this->ref, gko::dim<2>(rset.get_size(), cset.get_size()),
+                    std::move(gko::array<value_type>(this->ref, num_nnz)),
+                    std::move(gko::array<index_type>(this->ref, num_nnz)),
+                    std::move(row_nnz));
+    auto sdmat1 =
+        Mtx::create(this->exec, gko::dim<2>(rset.get_size(), cset.get_size()),
+                    std::move(gko::array<value_type>(this->exec, num_nnz)),
+                    std::move(gko::array<index_type>(this->exec, num_nnz)),
+                    std::move(drow_nnz));
 
     gko::kernels::reference::csr::compute_submatrix_from_index_set(
         this->ref, this->mtx2.get(), rset, cset, smat1.get());
@@ -1311,17 +1470,16 @@ TEST_F(Csr, CreateSubMatrixIsEquivalentToRef)
 }
 
 
-#ifndef GKO_COMPILING_DPCPP
-
-
 TEST_F(Csr, CanDetectMissingDiagonalEntry)
 {
     using T = double;
     using Csr = Mtx;
-    auto ref_mtx = gen_mtx<Csr>(103, 98, 10);
+    auto ref_mtx = gen_mtx<Csr>(103, 104, 10);
     const auto rowptrs = ref_mtx->get_row_ptrs();
     const auto colidxs = ref_mtx->get_col_idxs();
-    const int testrow = 15;
+    gko::utils::ensure_all_diagonal_entries(ref_mtx.get());
+    // Choose the last row to ensure that kernel assign enough work
+    const int testrow = 102;
     gko::utils::remove_diagonal_entry_from_row(ref_mtx.get(), testrow);
     auto mtx = gko::clone(exec, ref_mtx);
     bool has_diags = true;
@@ -1359,6 +1517,3 @@ TEST_F(Csr, AddScaledIdentityToNonSquare)
 
     GKO_ASSERT_MTX_NEAR(mtx, dmtx, r<value_type>::value);
 }
-
-
-#endif  // GKO_COMPILING_DPCPP

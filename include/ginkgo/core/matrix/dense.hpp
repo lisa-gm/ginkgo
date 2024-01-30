@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef GKO_PUBLIC_CORE_MATRIX_DENSE_HPP_
 #define GKO_PUBLIC_CORE_MATRIX_DENSE_HPP_
@@ -45,6 +17,8 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ginkgo/core/base/range_accessors.hpp>
 #include <ginkgo/core/base/types.hpp>
 #include <ginkgo/core/base/utils.hpp>
+#include <ginkgo/core/matrix/permutation.hpp>
+#include <ginkgo/core/matrix/scaled_permutation.hpp>
 
 
 namespace gko {
@@ -401,6 +375,181 @@ public:
      */
     void fill(const ValueType value);
 
+    /**
+     * Creates a permuted copy $A'$ of this matrix $A$ with the given
+     * permutation $P$. By default, this computes a symmetric permutation
+     * (permute_mode::symmetric). For the effect of the different permutation
+     * modes, see @ref permute_mode.
+     *
+     * @param permutation  The input permutation.
+     * @param mode  The permutation mode. If permute_mode::inverse is set, we
+     *              use the inverse permutation $P^{-1}$ instead of $P$.
+     *              If permute_mode::rows is set, the rows will be permuted.
+     *              If permute_mode::columns is set, the columns will be
+     *              permuted.
+     * @return  The permuted matrix.
+     */
+    std::unique_ptr<Dense> permute(
+        ptr_param<const Permutation<int32>> permutation,
+        permute_mode mode = permute_mode::symmetric) const;
+
+    /**
+     * @copydoc permute(ptr_param<const Permutation<int32>>, permute_mode)
+     */
+    std::unique_ptr<Dense> permute(
+        ptr_param<const Permutation<int64>> permutation,
+        permute_mode mode = permute_mode::symmetric) const;
+
+    /**
+     * Overload of permute(ptr_param<const Permutation<int32>>, permute_mode)
+     * that writes the permuted copy into an existing Dense matrix.
+     * @param output  the output matrix.
+     */
+    void permute(ptr_param<const Permutation<int32>> permutation,
+                 ptr_param<Dense> output, permute_mode mode) const;
+
+    /**
+     * @copydoc permute(ptr_param<const Permutation<int32>>, ptr_param<Dense>,
+     * permute_mode)
+     */
+    void permute(ptr_param<const Permutation<int64>> permutation,
+                 ptr_param<Dense> output, permute_mode mode) const;
+
+    /**
+     * Creates a non-symmetrically permuted copy $A'$ of this matrix $A$ with
+     * the given row and column permutations $P$ and $Q$. The operation will
+     * compute $A'(i, j) = A(p[i], q[j])$, or $A' = P A Q^T$ if `invert` is
+     * `false`, and $A'(p[i], q[j]) = A(i,j)$, or $A' = P^{-1} A Q^{-T}$ if
+     * `invert` is `true`.
+     *
+     * @param row_permutation  The permutation $P$ to apply to the rows
+     * @param column_permutation  The permutation $Q$ to apply to the columns
+     * @param invert  If set to `false`, uses the input permutations, otherwise
+     *                uses their inverses $P^{-1}, Q^{-1}$
+     * @return  The permuted matrix.
+     */
+    std::unique_ptr<Dense> permute(
+        ptr_param<const Permutation<int32>> row_permutation,
+        ptr_param<const Permutation<int32>> column_permutation,
+        bool invert = false) const;
+
+    /**
+     * @copydoc permute(ptr_param<const Permutation<int32>>, ptr_param<const
+     * Permutation<int32>>, permute_mode)
+     */
+    std::unique_ptr<Dense> permute(
+        ptr_param<const Permutation<int64>> row_permutation,
+        ptr_param<const Permutation<int64>> column_permutation,
+        bool invert = false) const;
+
+    /**
+     * Overload of permute(ptr_param<const Permutation<int32>>, ptr_param<const
+     * Permutation<int32>>, permute_mode) that writes the permuted copy into an
+     * existing Dense matrix.
+     * @param output  the output matrix.
+     */
+    void permute(ptr_param<const Permutation<int32>> row_permutation,
+                 ptr_param<const Permutation<int32>> column_permutation,
+                 ptr_param<Dense> output, bool invert = false) const;
+
+    /**
+     * @copydoc permute(ptr_param<const Permutation<int32>>, ptr_param<const
+     * Permutation<int32>>, ptr_param<Dense>, permute_mode)
+     */
+    void permute(ptr_param<const Permutation<int64>> row_permutation,
+                 ptr_param<const Permutation<int64>> column_permutation,
+                 ptr_param<Dense> output, bool invert = false) const;
+
+    /**
+     * Creates a scaled and permuted copy of this matrix.
+     * For an explanation of the permutation modes, see
+     * @ref permute(ptr_param<const Permutation<index_type>>, permute_mode)
+     *
+     * @param permutation  The scaled permutation.
+     * @param mode  The permutation mode.
+     * @return The permuted matrix.
+     */
+    std::unique_ptr<Dense> scale_permute(
+        ptr_param<const ScaledPermutation<value_type, int32>> permutation,
+        permute_mode mode = permute_mode::symmetric) const;
+
+    /**
+     * @copydoc scale_permute(ptr_param<const ScaledPermutation<value_type,
+     * int32>>, permute_mode)
+     */
+    std::unique_ptr<Dense> scale_permute(
+        ptr_param<const ScaledPermutation<value_type, int64>> permutation,
+        permute_mode mode = permute_mode::symmetric) const;
+
+    /**
+     * Overload of scale_permute(ptr_param<const ScaledPermutation<value_type,
+     * int32>>, permute_mode) that writes the permuted copy into an
+     * existing Dense matrix.
+     * @param output  the output matrix.
+     */
+    void scale_permute(
+        ptr_param<const ScaledPermutation<value_type, int32>> permutation,
+        ptr_param<Dense> output, permute_mode mode) const;
+
+    /**
+     * @copydoc scale_permute(ptr_param<const ScaledPermutation<value_type,
+     * int32>>, ptr_param<Dense>, permute_mode)
+     */
+    void scale_permute(
+        ptr_param<const ScaledPermutation<value_type, int64>> permutation,
+        ptr_param<Dense> output, permute_mode mode) const;
+
+    /**
+     * Creates a scaled and permuted copy of this matrix.
+     * For an explanation of the parameters, see
+     * @ref permute(ptr_param<const Permutation<index_type>>, ptr_param<const
+     * Permutation<index_type>>, permute_mode)
+     *
+     * @param row_permutation  The scaled row permutation.
+     * @param column_permutation  The scaled column permutation.
+     * @param invert  If set to `false`, uses the input permutations, otherwise
+     *                uses their inverses $P^{-1}, Q^{-1}$
+     * @return The permuted matrix.
+     */
+    std::unique_ptr<Dense> scale_permute(
+        ptr_param<const ScaledPermutation<value_type, int32>> row_permutation,
+        ptr_param<const ScaledPermutation<value_type, int32>>
+            column_permutation,
+        bool invert = false) const;
+
+    /**
+     * @copydoc scale_permute(ptr_param<const ScaledPermutation<value_type,
+     * int32>>, ptr_param<const ScaledPermutation<value_type, int32>>, bool)
+     */
+    std::unique_ptr<Dense> scale_permute(
+        ptr_param<const ScaledPermutation<value_type, int64>> row_permutation,
+        ptr_param<const ScaledPermutation<value_type, int64>>
+            column_permutation,
+        bool invert = false) const;
+
+    /**
+     * Overload of scale_permute(ptr_param<const ScaledPermutation<value_type,
+     * int32>>, ptr_param<const ScaledPermutation<value_type, int32>>, bool)
+     * that writes the permuted copy into an existing Dense matrix.
+     * @param output  the output matrix.
+     */
+    void scale_permute(
+        ptr_param<const ScaledPermutation<value_type, int32>> row_permutation,
+        ptr_param<const ScaledPermutation<value_type, int32>>
+            column_permutation,
+        ptr_param<Dense> output, bool invert = false) const;
+
+    /**
+     * @copydoc scale_permute(ptr_param<const ScaledPermutation<value_type,
+     * int32>>, ptr_param<const ScaledPermutation<value_type, int32>>,
+     * ptr_param<Dense>, bool)
+     */
+    void scale_permute(
+        ptr_param<const ScaledPermutation<value_type, int64>> row_permutation,
+        ptr_param<const ScaledPermutation<value_type, int64>>
+            column_permutation,
+        ptr_param<Dense> output, bool invert = false) const;
+
     std::unique_ptr<LinOp> permute(
         const array<int32>* permutation_indices) const override;
 
@@ -480,7 +629,7 @@ public:
      * @param gather_indices  pointer to an array containing row indices
      *                        from this matrix. It may contain duplicates.
      * @return  Dense matrix on the same executor with the same number of
-     *          columns and `gather_indices->get_num_elems()` rows containing
+     *          columns and `gather_indices->get_size()` rows containing
      *          the gathered rows from this matrix:
      *          `output(i,j) = input(gather_indices(i), j)`
      */
@@ -501,7 +650,7 @@ public:
      *                        `row_collection(i,j)
      *                         = input(gather_indices(i), j)`
      *                        It must have the same number of columns as this
-     *                        matrix and `gather_indices->get_num_elems()` rows.
+     *                        matrix and `gather_indices->get_size()` rows.
      */
     void row_gather(const array<int32>* gather_indices,
                     ptr_param<LinOp> row_collection) const;
@@ -523,7 +672,7 @@ public:
      *             gathered rows:
      *             `row_collection(i,j) = input(gather_indices(i), j)`
      *             It must have the same number of columns as this
-     *             matrix and `gather_indices->get_num_elems()` rows.
+     *             matrix and `gather_indices->get_size()` rows.
      */
     void row_gather(ptr_param<const LinOp> alpha,
                     const array<int32>* gather_indices,
@@ -704,7 +853,7 @@ public:
      */
     size_type get_num_stored_elements() const noexcept
     {
-        return values_.get_num_elems();
+        return values_.get_size();
     }
 
     /**
@@ -918,6 +1067,27 @@ public:
     void compute_squared_norm2(ptr_param<LinOp> result, array<char>& tmp) const;
 
     /**
+     * Computes the column-wise arithmetic mean of this matrix.
+     *
+     * @param result  a Dense row vector, used to store the mean
+     *                (the number of columns in the vector must match the number
+     *                of columns of this)
+     */
+    void compute_mean(ptr_param<LinOp> result) const;
+
+    /**
+     * Computes the column-wise arithmetic mean of this matrix.
+     *
+     * @param result  a Dense row vector, used to store the mean
+     *                (the number of columns in the vector must match the
+     *                number of columns of this)
+     * @param tmp  the temporary storage to use for partial sums during the
+     *             reduction computation. It may be resized and/or reset to the
+     *             correct executor.
+     */
+    void compute_mean(ptr_param<LinOp> result, array<char>& tmp) const;
+
+    /**
      * Create a submatrix from the original matrix.
      * Warning: defining stride for this create_submatrix method might cause
      * wrong memory access. Better use the create_submatrix(rows, columns)
@@ -1060,7 +1230,7 @@ protected:
     {
         if (size[0] > 0 && size[1] > 0) {
             GKO_ENSURE_IN_BOUNDS((size[0] - 1) * stride + size[1] - 1,
-                                 values_.get_num_elems());
+                                 values_.get_size());
         }
     }
 
@@ -1216,6 +1386,11 @@ protected:
     virtual void compute_squared_norm2_impl(LinOp* result) const;
 
     /**
+     * @copydoc compute_mean(LinOp*) const
+     */
+    virtual void compute_mean_impl(LinOp* result) const;
+
+    /**
      * Resizes the matrix to the given size.
      *
      * If the new size matches the current size, the stride will be left
@@ -1252,19 +1427,24 @@ protected:
     }
 
     template <typename IndexType>
-    void permute_impl(const array<IndexType>* permutation, Dense* output) const;
+    void permute_impl(const Permutation<IndexType>* permutation,
+                      permute_mode mode, Dense* output) const;
 
     template <typename IndexType>
-    void inverse_permute_impl(const array<IndexType>* permutation,
-                              Dense* output) const;
+    void permute_impl(const Permutation<IndexType>* row_permutation,
+                      const Permutation<IndexType>* col_permutation,
+                      bool invert, Dense* output) const;
 
     template <typename IndexType>
-    void row_permute_impl(const array<IndexType>* permutation,
-                          Dense* output) const;
+    void scale_permute_impl(
+        const ScaledPermutation<ValueType, IndexType>* permutation,
+        permute_mode mode, Dense* output) const;
 
     template <typename IndexType>
-    void inverse_row_permute_impl(const array<IndexType>* permutation,
-                                  Dense* output) const;
+    void scale_permute_impl(
+        const ScaledPermutation<ValueType, IndexType>* row_permutation,
+        const ScaledPermutation<ValueType, IndexType>* column_permutation,
+        bool invert, Dense* output) const;
 
     template <typename OutputType, typename IndexType>
     void row_gather_impl(const array<IndexType>* row_idxs,
@@ -1275,14 +1455,6 @@ protected:
                          const array<IndexType>* row_idxs,
                          const Dense<ValueType>* beta,
                          Dense<OutputType>* row_collection) const;
-
-    template <typename IndexType>
-    void column_permute_impl(const array<IndexType>* permutation,
-                             Dense* output) const;
-
-    template <typename IndexType>
-    void inverse_column_permute_impl(const array<IndexType>* permutation,
-                                     Dense* output) const;
 
 private:
     array<value_type> values_;

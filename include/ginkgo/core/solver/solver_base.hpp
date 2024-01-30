@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef GKO_PUBLIC_CORE_SOLVER_SOLVER_BASE_HPP_
 #define GKO_PUBLIC_CORE_SOLVER_SOLVER_BASE_HPP_
@@ -49,14 +21,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <ginkgo/core/stop/criterion.hpp>
 
 
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
-#endif
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 5211, 4973, 4974)
-#endif
+GKO_BEGIN_DISABLE_DEPRECATION_WARNINGS
 
 
 namespace gko {
@@ -537,10 +502,9 @@ private:
 template <typename MatrixType>
 class
     // clang-format off
-    [[deprecated("This class will be replaced by the template-less detail::SolverBaseLinOp in a future release")]] SolverBase
+    GKO_DEPRECATED("This class will be replaced by the template-less detail::SolverBaseLinOp in a future release") SolverBase
     // clang-format on
-    : public detail::SolverBaseLinOp
-{
+    : public detail::SolverBaseLinOp {
 public:
     using detail::SolverBaseLinOp::SolverBaseLinOp;
 
@@ -861,111 +825,33 @@ private:
 };
 
 
-/**
- * The parameter type shared between all iterative solvers.
- * @see GKO_CREATE_FACTORY_PARAMETERS
- */
-struct iterative_solver_factory_parameters {
+template <typename Parameters, typename Factory>
+struct enable_iterative_solver_factory_parameters
+    : enable_parameters_type<Parameters, Factory> {
     /**
      * Stopping criteria to be used by the solver.
      */
-    std::vector<std::shared_ptr<const stop::CriterionFactory>> criteria{};
-};
-
-
-template <typename Parameters, typename Factory>
-struct enable_iterative_solver_factory_parameters
-    : enable_parameters_type<Parameters, Factory>,
-      iterative_solver_factory_parameters {
-    /**
-     * Provides stopping criteria via stop::CriterionFactory instances to be
-     * used by the iterative solver in a fluent interface.
-     */
-    template <typename... Args>
-    Parameters& with_criteria(Args&&... value)
-    {
-        this->criterion_generators = {
-            deferred_factory_parameter<stop::CriterionFactory>{
-                std::forward<Args>(value)}...};
-        this->deferred_factories["criteria"] = [](const auto& exec,
-                                                  auto& params) {
-            if (!params.criterion_generators.empty()) {
-                params.criteria.clear();
-                for (auto& generator : params.criterion_generators) {
-                    params.criteria.push_back(generator.on(exec));
-                }
-            }
-        };
-        return *self();
-    }
-
-private:
-    GKO_ENABLE_SELF(Parameters);
-
-    std::vector<deferred_factory_parameter<stop::CriterionFactory>>
-        criterion_generators;
-};
-
-
-/**
- * The parameter type shared between all preconditioned iterative solvers,
- * excluding the parameters available in iterative_solver_factory_parameters.
- * @see GKO_CREATE_FACTORY_PARAMETERS
- */
-struct preconditioned_iterative_solver_factory_parameters {
-    /**
-     * The preconditioner to be used by the iterative solver. By default, no
-     * preconditioner is used.
-     */
-    std::shared_ptr<const LinOpFactory> preconditioner{nullptr};
-
-    /**
-     * Already generated preconditioner. If one is provided, the factory
-     * `preconditioner` will be ignored.
-     */
-    std::shared_ptr<const LinOp> generated_preconditioner{nullptr};
+    std::vector<std::shared_ptr<const stop::CriterionFactory>>
+        GKO_DEFERRED_FACTORY_VECTOR_PARAMETER(criteria);
 };
 
 
 template <typename Parameters, typename Factory>
 struct enable_preconditioned_iterative_solver_factory_parameters
-    : enable_iterative_solver_factory_parameters<Parameters, Factory>,
-      preconditioned_iterative_solver_factory_parameters {
+    : enable_iterative_solver_factory_parameters<Parameters, Factory> {
     /**
-     * Provides a preconditioner factory to be used by the iterative solver in a
-     * fluent interface.
-     * @see preconditioned_iterative_solver_factory_parameters::preconditioner
+     * The preconditioner to be used by the iterative solver. By default, no
+     * preconditioner is used.
      */
-    Parameters& with_preconditioner(
-        deferred_factory_parameter<LinOpFactory> preconditioner)
-    {
-        this->preconditioner_generator = std::move(preconditioner);
-        this->deferred_factories["preconditioner"] = [](const auto& exec,
-                                                        auto& params) {
-            if (!params.preconditioner_generator.is_empty()) {
-                params.preconditioner =
-                    params.preconditioner_generator.on(exec);
-            }
-        };
-        return *self();
-    }
+    std::shared_ptr<const LinOpFactory> GKO_DEFERRED_FACTORY_PARAMETER(
+        preconditioner);
 
     /**
-     * Provides a concrete preconditioner to be used by the iterative solver in
-     * a fluent interface.
-     * @see preconditioned_iterative_solver_factory_parameters::preconditioner
+     * Already generated preconditioner. If one is provided, the factory
+     * `preconditioner` will be ignored.
      */
-    Parameters& with_generated_preconditioner(
-        std::shared_ptr<const LinOp> generated_preconditioner)
-    {
-        this->generated_preconditioner = std::move(generated_preconditioner);
-        return *self();
-    }
-
-private:
-    GKO_ENABLE_SELF(Parameters);
-
-    deferred_factory_parameter<LinOpFactory> preconditioner_generator;
+    std::shared_ptr<const LinOp> GKO_FACTORY_PARAMETER_SCALAR(
+        generated_preconditioner, nullptr);
 };
 
 
@@ -973,10 +859,7 @@ private:
 }  // namespace gko
 
 
-#if defined(__GNUC__) || defined(__clang__)
-#pragma GCC diagnostic pop
-#endif
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
+GKO_END_DISABLE_DEPRECATION_WARNINGS
+
+
 #endif  // GKO_PUBLIC_CORE_SOLVER_SOLVER_BASE_HPP_

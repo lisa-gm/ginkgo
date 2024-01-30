@@ -1,36 +1,11 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #include "core/base/batch_multi_vector_kernels.hpp"
+
+
+#include <algorithm>
 
 
 #include <CL/sycl.hpp>
@@ -77,10 +52,15 @@ void scale(std::shared_ptr<const DefaultExecutor> exec,
     const auto alpha_ub = get_batch_struct(alpha);
     const auto x_ub = get_batch_struct(x);
 
+    const int num_rows = x->get_common_size()[0];
+    constexpr int max_subgroup_size = config::warp_size;
     const auto num_batches = x_ub.num_batch_items;
     auto device = exec->get_queue()->get_device();
-    auto group_size =
+    long max_group_size =
         device.get_info<sycl::info::device::max_work_group_size>();
+    int group_size =
+        std::min(ceildiv(num_rows, max_subgroup_size) * max_subgroup_size,
+                 max_group_size);
 
     const dim3 block(group_size);
     const dim3 grid(num_batches);
@@ -95,8 +75,24 @@ void scale(std::shared_ptr<const DefaultExecutor> exec,
                     const auto alpha_b =
                         batch::extract_batch_item(alpha_ub, group_id);
                     const auto x_b = batch::extract_batch_item(x_ub, group_id);
+                    scale_kernel(
+                        alpha_b, x_b, item_ct1,
+                        [](int row, int col, int stride) { return 0; });
+                });
+        });
+    } else if (alpha->get_common_size() == x->get_common_size()) {
+        exec->get_queue()->submit([&](sycl::handler& cgh) {
+            cgh.parallel_for(
+                sycl_nd_range(grid, block), [=](sycl::nd_item<3> item_ct1) {
+                    auto group = item_ct1.get_group();
+                    auto group_id = group.get_group_linear_id();
+                    const auto alpha_b =
+                        batch::extract_batch_item(alpha_ub, group_id);
+                    const auto x_b = batch::extract_batch_item(x_ub, group_id);
                     scale_kernel(alpha_b, x_b, item_ct1,
-                                 [](int col) { return 0; });
+                                 [](int row, int col, int stride) {
+                                     return row * stride + col;
+                                 });
                 });
         });
     } else {
@@ -108,8 +104,9 @@ void scale(std::shared_ptr<const DefaultExecutor> exec,
                     const auto alpha_b =
                         batch::extract_batch_item(alpha_ub, group_id);
                     const auto x_b = batch::extract_batch_item(x_ub, group_id);
-                    scale_kernel(alpha_b, x_b, item_ct1,
-                                 [](int col) { return col; });
+                    scale_kernel(
+                        alpha_b, x_b, item_ct1,
+                        [](int row, int col, int stride) { return col; });
                 });
         });
     }
@@ -125,13 +122,16 @@ void add_scaled(std::shared_ptr<const DefaultExecutor> exec,
                 const batch::MultiVector<ValueType>* const x,
                 batch::MultiVector<ValueType>* const y)
 {
-    const size_type num_rows = x->get_common_size()[0];
-    const size_type num_cols = x->get_common_size()[1];
-
+    constexpr int max_subgroup_size = config::warp_size;
+    const int num_rows = x->get_common_size()[0];
+    const int num_cols = x->get_common_size()[1];
     const auto num_batches = x->get_num_batch_items();
     auto device = exec->get_queue()->get_device();
-    auto group_size =
+    long max_group_size =
         device.get_info<sycl::info::device::max_work_group_size>();
+    int group_size =
+        std::min(ceildiv(num_rows, max_subgroup_size) * max_subgroup_size,
+                 max_group_size);
 
     const dim3 block(group_size);
     const dim3 grid(num_batches);
@@ -183,29 +183,59 @@ void compute_dot(std::shared_ptr<const DefaultExecutor> exec,
     const auto y_ub = get_batch_struct(y);
     const auto res_ub = get_batch_struct(result);
 
+    constexpr int max_subgroup_size = config::warp_size;
     const auto num_batches = x_ub.num_batch_items;
+    const int num_rows = x_ub.num_rows;
     auto device = exec->get_queue()->get_device();
-    auto group_size =
+
+    long max_group_size =
         device.get_info<sycl::info::device::max_work_group_size>();
+    int group_size =
+        std::min(ceildiv(num_rows, max_subgroup_size) * max_subgroup_size,
+                 max_group_size);
 
     const dim3 block(group_size);
     const dim3 grid(num_batches);
-
-    // TODO: Remove reqd_sub_group size and use sycl::reduce_over_group
-    exec->get_queue()->submit([&](sycl::handler& cgh) {
-        cgh.parallel_for(
-            sycl_nd_range(grid, block),
-            [=](sycl::nd_item<3> item_ct1) [[sycl::reqd_sub_group_size(
-                config::warp_size)]] {
-                auto group = item_ct1.get_group();
-                auto group_id = group.get_group_linear_id();
-                const auto x_b = batch::extract_batch_item(x_ub, group_id);
-                const auto y_b = batch::extract_batch_item(y_ub, group_id);
-                const auto res_b = batch::extract_batch_item(res_ub, group_id);
-                compute_gen_dot_product_kernel(x_b, y_b, res_b, item_ct1,
-                                               [](auto val) { return val; });
-            });
-    });
+    if (x->get_common_size()[1] == 1) {
+        exec->get_queue()->submit([&](sycl::handler& cgh) {
+            cgh.parallel_for(
+                sycl_nd_range(grid, block),
+                [=](sycl::nd_item<3> item_ct1)
+                    [[sycl::reqd_sub_group_size(max_subgroup_size)]] {
+                        auto group = item_ct1.get_group();
+                        auto group_id = group.get_group_linear_id();
+                        const auto x_b =
+                            batch::extract_batch_item(x_ub, group_id);
+                        const auto y_b =
+                            batch::extract_batch_item(y_ub, group_id);
+                        const auto res_b =
+                            batch::extract_batch_item(res_ub, group_id);
+                        single_rhs_compute_conj_dot_sg(
+                            x_b.num_rows, x_b.values, y_b.values,
+                            res_b.values[0], item_ct1);
+                    });
+        });
+    } else {
+        // TODO: Remove reqd_sub_group size and use sycl::reduce_over_group
+        exec->get_queue()->submit([&](sycl::handler& cgh) {
+            cgh.parallel_for(
+                sycl_nd_range(grid, block),
+                [=](sycl::nd_item<3> item_ct1)
+                    [[sycl::reqd_sub_group_size(max_subgroup_size)]] {
+                        auto group = item_ct1.get_group();
+                        auto group_id = group.get_group_linear_id();
+                        const auto x_b =
+                            batch::extract_batch_item(x_ub, group_id);
+                        const auto y_b =
+                            batch::extract_batch_item(y_ub, group_id);
+                        const auto res_b =
+                            batch::extract_batch_item(res_ub, group_id);
+                        compute_gen_dot_product_kernel(
+                            x_b, y_b, res_b, item_ct1,
+                            [](auto val) { return val; });
+                    });
+        });
+    }
 }
 
 GKO_INSTANTIATE_FOR_EACH_VALUE_TYPE(
@@ -222,10 +252,15 @@ void compute_conj_dot(std::shared_ptr<const DefaultExecutor> exec,
     const auto y_ub = get_batch_struct(y);
     const auto res_ub = get_batch_struct(result);
 
+    constexpr int max_subgroup_size = config::warp_size;
+    const int num_rows = x->get_common_size()[0];
     const auto num_batches = x_ub.num_batch_items;
     auto device = exec->get_queue()->get_device();
-    auto group_size =
+    long max_group_size =
         device.get_info<sycl::info::device::max_work_group_size>();
+    int group_size =
+        std::min(ceildiv(num_rows, max_subgroup_size) * max_subgroup_size,
+                 max_group_size);
 
     const dim3 block(group_size);
     const dim3 grid(num_batches);
@@ -234,7 +269,7 @@ void compute_conj_dot(std::shared_ptr<const DefaultExecutor> exec,
         cgh.parallel_for(
             sycl_nd_range(grid, block),
             [=](sycl::nd_item<3> item_ct1)
-                [[sycl::reqd_sub_group_size(config::warp_size)]] {
+                [[sycl::reqd_sub_group_size(max_subgroup_size)]] {
                     auto group = item_ct1.get_group();
                     auto group_id = group.get_group_linear_id();
                     const auto x_b = batch::extract_batch_item(x_ub, group_id);
@@ -261,26 +296,50 @@ void compute_norm2(std::shared_ptr<const DefaultExecutor> exec,
     const auto res_ub = get_batch_struct(result);
 
     const auto num_batches = x_ub.num_batch_items;
+    const int num_rows = x->get_common_size()[0];
     auto device = exec->get_queue()->get_device();
-    auto group_size =
+
+    constexpr int max_subgroup_size = config::warp_size;
+    long max_group_size =
         device.get_info<sycl::info::device::max_work_group_size>();
+    int group_size =
+        std::min(ceildiv(num_rows, max_subgroup_size) * max_subgroup_size,
+                 max_group_size);
 
     const dim3 block(group_size);
     const dim3 grid(num_batches);
-
-    exec->get_queue()->submit([&](sycl::handler& cgh) {
-        cgh.parallel_for(sycl_nd_range(grid, block),
-                         [=](sycl::nd_item<3> item_ct1)
-                             [[sycl::reqd_sub_group_size(config::warp_size)]] {
-                                 auto group = item_ct1.get_group();
-                                 auto group_id = group.get_group_linear_id();
-                                 const auto x_b =
-                                     batch::extract_batch_item(x_ub, group_id);
-                                 const auto res_b = batch::extract_batch_item(
-                                     res_ub, group_id);
-                                 compute_norm2_kernel(x_b, res_b, item_ct1);
-                             });
-    });
+    if (x->get_common_size()[1] == 1) {
+        exec->get_queue()->submit([&](sycl::handler& cgh) {
+            cgh.parallel_for(
+                sycl_nd_range(grid, block),
+                [=](sycl::nd_item<3> item_ct1)
+                    [[sycl::reqd_sub_group_size(max_subgroup_size)]] {
+                        auto group = item_ct1.get_group();
+                        auto group_id = group.get_group_linear_id();
+                        const auto x_b =
+                            batch::extract_batch_item(x_ub, group_id);
+                        const auto res_b =
+                            batch::extract_batch_item(res_ub, group_id);
+                        single_rhs_compute_norm2_sg(x_b.num_rows, x_b.values,
+                                                    res_b.values[0], item_ct1);
+                    });
+        });
+    } else {
+        exec->get_queue()->submit([&](sycl::handler& cgh) {
+            cgh.parallel_for(
+                sycl_nd_range(grid, block),
+                [=](sycl::nd_item<3> item_ct1)
+                    [[sycl::reqd_sub_group_size(max_subgroup_size)]] {
+                        auto group = item_ct1.get_group();
+                        auto group_id = group.get_group_linear_id();
+                        const auto x_b =
+                            batch::extract_batch_item(x_ub, group_id);
+                        const auto res_b =
+                            batch::extract_batch_item(res_ub, group_id);
+                        compute_norm2_kernel(x_b, res_b, item_ct1);
+                    });
+        });
+    }
 }
 
 GKO_INSTANTIATE_FOR_EACH_VALUE_TYPE(
@@ -296,9 +355,14 @@ void copy(std::shared_ptr<const DefaultExecutor> exec,
     const auto result_ub = get_batch_struct(result);
 
     const auto num_batches = x_ub.num_batch_items;
+    const int num_rows = x->get_common_size()[0];
     auto device = exec->get_queue()->get_device();
-    auto group_size =
+    constexpr int max_subgroup_size = config::warp_size;
+    long max_group_size =
         device.get_info<sycl::info::device::max_work_group_size>();
+    int group_size =
+        std::min(ceildiv(num_rows, max_subgroup_size) * max_subgroup_size,
+                 max_group_size);
 
     const dim3 block(group_size);
     const dim3 grid(num_batches);

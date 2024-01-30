@@ -265,6 +265,8 @@ test/cuda110/mvapich2/gcc/cuda/debug/shared:
     SLURM_GRES: "gpu:4"
     SLURM_TIME: "02:00:00"
   dependencies: null
+  # FIXME: current slurm always reports failure even if all tests are passed.
+  allow_failure: yes
   needs: [ "build/cuda110/mvapich2/gcc/cuda/debug/shared" ]
 
 
@@ -298,6 +300,8 @@ test/cuda110/nompi/clang/cuda/release/static:
     SLURM_GRES: "gpu:4"
     SLURM_TIME: "01:30:00"
   dependencies: null
+  # FIXME: current slurm always reports failure even if all tests are passed.
+  allow_failure: yes
   needs: [ "build/cuda110/nompi/clang/cuda/release/static" ]
 
 
@@ -332,6 +336,8 @@ test/cuda110/nompi/intel/cuda/debug/static:
     SLURM_GRES: "gpu:4"
     SLURM_TIME: "02:00:00"
   dependencies: null
+  # FIXME: current slurm always reports failure even if all tests are passed.
+  allow_failure: yes
   needs: [ "build/cuda110/nompi/intel/cuda/debug/static" ]
 
 
@@ -722,19 +728,6 @@ subdir-build:
   variables:
     BUILD_OMP: "ON"
     CI_PROJECT_PATH_SUFFIX: "/test_subdir"
-  allow_failure: no
-
-# Ensure Ginkgo can be used when exporting the build directory
-export-build:
-  stage: code_quality
-  extends:
-    - .build_template
-    - .default_variables
-    - .full_test_condition
-    - .use_gko-nocuda-nompi-gnu9-llvm8
-  variables:
-    BUILD_OMP: "ON"
-    EXPORT_BUILD_DIR: "ON"
   allow_failure: no
 
 # Run clang-tidy and iwyu

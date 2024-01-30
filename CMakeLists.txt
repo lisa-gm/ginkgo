@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.16)
 
-project(Ginkgo LANGUAGES C CXX VERSION 1.7.0 DESCRIPTION "A numerical linear algebra library targeting many-core architectures")
+project(Ginkgo LANGUAGES CXX VERSION 1.8.0 DESCRIPTION "A numerical linear algebra library targeting many-core architectures")
 set(Ginkgo_VERSION_TAG "develop")
 set(PROJECT_VERSION_TAG ${Ginkgo_VERSION_TAG})
 # Cuda and Hip also look for Threads. Set it before any find_package to ensure the Threads setting is not changed.
@@ -35,9 +35,6 @@ option(GINKGO_TEST_NONDEFAULT_STREAM "Uses non-default streams in CUDA and HIP t
 option(GINKGO_MIXED_PRECISION "Instantiate true mixed-precision kernels (otherwise they will be conversion-based using implicit temporary storage)" OFF)
 option(GINKGO_SKIP_DEPENDENCY_UPDATE
     "Do not update dependencies each time the project is rebuilt" ON)
-option(GINKGO_EXPORT_BUILD_DIR
-    "Make Ginkgo export its build directory to the CMake package registry."
-    OFF)
 option(GINKGO_WITH_CLANG_TIDY "Make Ginkgo call `clang-tidy` to find programming issues." OFF)
 option(GINKGO_WITH_IWYU "Make Ginkgo call `iwyu` (Include What You Use) to find include issues." OFF)
 option(GINKGO_WITH_CCACHE "Use ccache if available to speed up C++ and CUDA rebuilds by caching compilations." ON)
@@ -242,14 +239,21 @@ if(GINKGO_BUILD_MPI)
         set(GINKGO_HAVE_GPU_AWARE_MPI OFF)
     endif()
 
-    try_run(uses_openmpi gko_result_unused
+    # use try_compile instead of try_run to prevent cross-compiling issues
+    try_compile(uses_openmpi
         ${Ginkgo_BINARY_DIR}
         ${Ginkgo_SOURCE_DIR}/cmake/openmpi_test.cpp
+                COMPILE_DEFINITIONS -DCHECK_HAS_OPEN_MPI=1
         LINK_LIBRARIES MPI::MPI_CXX
-        RUN_OUTPUT_VARIABLE openmpi_version
         )
     if(uses_openmpi)
-        if(openmpi_version VERSION_LESS "4.1")
+        try_compile(valid_openmpi_version
+                    ${Ginkgo_BINARY_DIR}
+                    ${Ginkgo_SOURCE_DIR}/cmake/openmpi_test.cpp
+                    COMPILE_DEFINITIONS -DCHECK_OPEN_MPI_VERSION=1
+                    LINK_LIBRARIES MPI::MPI_CXX
+        )
+        if(NOT valid_openmpi_version)
             message(WARNING
                 "OpenMPI v4.0.x has a bug that forces us to use blocking communication in our distributed "
                 "matrix class. To enable faster, non-blocking communication, consider updating your OpenMPI version or "
@@ -347,13 +351,38 @@ if(GINKGO_BUILD_BENCHMARKS)
 endif()
 
 if(GINKGO_DEVEL_TOOLS)
-    add_custom_target(add_license
-        COMMAND ${Ginkgo_SOURCE_DIR}/dev_tools/scripts/add_license.sh
-        WORKING_DIRECTORY ${Ginkgo_SOURCE_DIR})
-    # if git-cmake-format can not build format target, do not add the dependencies
-    if(TARGET format)
-        add_dependencies(format add_license)
+    find_program(PRE_COMMIT pre-commit)
+    if(NOT PRE_COMMIT)
+        message(FATAL_ERROR "The pre-commit command was not found. It is necessary if you want to commit changes to Ginkgo. "
+                "If that is not the case, set GINKGO_DEVEL_TOOLS=OFF. "
+                "Otherwise install pre-commit via pipx (or pip) using:\n"
+                "    pipx install pre-commit")
     endif()
+
+    execute_process(COMMAND "${PRE_COMMIT}" "install"
+                    WORKING_DIRECTORY ${Ginkgo_SOURCE_DIR}
+                    RESULT_VARIABLE pre-commit-result
+                    OUTPUT_VARIABLE pre-commit-output
+                    ERROR_VARIABLE pre-commit-error)
+    if(pre-commit-result)
+        message(FATAL_ERROR
+                "Failed to install the git hooks via pre-commit. Please check the error message:\n"
+                "${pre-commit-output}\n${pre-commit-error}")
+    endif()
+    if(pre-commit-output MATCHES "^Running in migration mode with existing hooks")
+        message(WARNING
+                "An existing git hook was encountered during `pre-commit install`. The old git hook "
+                "will also be executed. Consider removing it with `pre-commit install -f`")
+    elseif(NOT pre-commit-output MATCHES "^pre-commit installed at")
+        message(WARNING
+                "`pre-commit install` did not exit normally. Please check the output message:\n"
+                "${pre-commit-output}")
+    endif()
+
+    add_custom_target(format
+                      COMMAND bash -c "${PRE_COMMIT} run"
+                      WORKING_DIRECTORY ${Ginkgo_SOURCE_DIR}
+                      VERBATIM)
 endif()
 
 # MacOS needs to install bash, gnu-sed, findutils and coreutils
@@ -418,6 +447,7 @@ ginkgo_modify_flags(CMAKE_CUDA_FLAGS)
 ginkgo_modify_flags(CMAKE_CUDA_FLAGS_DEBUG)
 ginkgo_modify_flags(CMAKE_CUDA_FLAGS_RELEASE)
 ginkgo_install()
+ginkgo_export_binary_dir()
 
 set(GINKGO_TEST_INSTALL_SRC_DIR "${Ginkgo_SOURCE_DIR}/test/test_install/")
 set(GINKGO_TEST_INSTALL_BIN_DIR "${Ginkgo_BINARY_DIR}/test/test_install/")
@@ -451,7 +481,6 @@ add_custom_target(test_install
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
     -DCMAKE_PREFIX_PATH=${CMAKE_INSTALL_PREFIX}
     -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-    -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
     -DCMAKE_CUDA_COMPILER=${CMAKE_CUDA_COMPILER}
     -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
     # `--config cfg` is ignored by single-configuration generator.
@@ -472,9 +501,9 @@ add_custom_target(test_exportbuild
     -S${GINKGO_TEST_EXPORTBUILD_SRC_DIR}
     -B${GINKGO_TEST_EXPORTBUILD_BIN_DIR}
     -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-    -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
     -DCMAKE_CUDA_COMPILER=${CMAKE_CUDA_COMPILER}
     -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
+    -DGinkgo_ROOT=${Ginkgo_BINARY_DIR}
     # `--config cfg` is ignored by single-configuration generator.
     # `$<CONFIG>` is always be the same as `CMAKE_BUILD_TYPE` in
     # single-configuration generator.
@@ -482,15 +511,13 @@ add_custom_target(test_exportbuild
     --build ${GINKGO_TEST_EXPORTBUILD_BIN_DIR}
     --config $<CONFIG>
     COMMAND ${GINKGO_TEST_EXPORTBUILD_CMD}
-    COMMENT "Running a test on Ginkgo's exported build directory. "
-    "This requires compiling Ginkgo with `-DGINKGO_EXPORT_BUILD_DIR=ON` first.")
+    COMMENT "Running a test on Ginkgo's exported build directory.")
 
 add_custom_target(test_pkgconfig
     COMMAND ${CMAKE_COMMAND} -G${CMAKE_GENERATOR} ${TOOLSET}
     -S${GINKGO_TEST_PKGCONFIG_SRC_DIR}
     -B${GINKGO_TEST_PKGCONFIG_BIN_DIR}
     -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
-    -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
     -DCMAKE_CUDA_COMPILER=${CMAKE_CUDA_COMPILER}
     -DCMAKE_CXX_FLAGS=${CMAKE_CXX_FLAGS}
     # `--config cfg` is ignored by single-configuration generator.

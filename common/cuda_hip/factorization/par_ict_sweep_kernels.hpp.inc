@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 namespace kernel {
 
@@ -75,8 +47,8 @@ __global__ __launch_bounds__(default_block_size) void ict_sweep(
             // we don't need to use the `bool valid` because last_entry is
             // already a smaller sentinel value than the one used in group_merge
             if (l_col == lh_row && l_col < last_entry) {
-                sum += l_vals[l_idx + l_row_begin] *
-                       conj(l_vals[lh_idx + lh_col_begin]);
+                sum += load_relaxed(l_vals + (l_idx + l_row_begin)) *
+                       conj(load_relaxed(l_vals + (lh_idx + lh_col_begin)));
             }
             // remember the transposed element
             auto found_transp = subwarp.ballot(lh_row == row);
@@ -90,11 +62,12 @@ __global__ __launch_bounds__(default_block_size) void ict_sweep(
     sum = reduce(subwarp, sum, [](ValueType a, ValueType b) { return a + b; });
 
     if (subwarp.thread_rank() == 0) {
-        auto to_write = row == col
-                            ? sqrt(a_val - sum)
-                            : (a_val - sum) / l_vals[l_row_ptrs[col + 1] - 1];
+        auto to_write =
+            row == col ? sqrt(a_val - sum)
+                       : (a_val - sum) /
+                             load_relaxed(l_vals + (l_row_ptrs[col + 1] - 1));
         if (is_finite(to_write)) {
-            l_vals[l_nz] = to_write;
+            store_relaxed(l_vals + l_nz, to_write);
         }
     }
 }

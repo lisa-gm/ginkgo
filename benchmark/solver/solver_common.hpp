@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef GINKGO_BENCHMARK_SOLVER_SOLVER_COMMON_HPP
 #define GINKGO_BENCHMARK_SOLVER_SOLVER_COMMON_HPP
@@ -62,13 +34,13 @@ DEFINE_bool(
     rel_residual, false,
     "Use relative residual instead of residual reduction stopping criterion");
 
-DEFINE_string(
-    solvers, "cg",
-    "A comma-separated list of solvers to run. "
-    "Supported values are: bicgstab, bicg, cb_gmres_keep, "
-    "cb_gmres_reduce1, cb_gmres_reduce2, cb_gmres_integer, "
-    "cb_gmres_ireduce1, cb_gmres_ireduce2, cg, cgs, fcg, gmres, idr, "
-    "lower_trs, upper_trs, spd_direct, symm_direct, direct, overhead");
+DEFINE_string(solvers, "cg",
+              "A comma-separated list of solvers to run. "
+              "Supported values are: bicgstab, bicg, cb_gmres_keep, "
+              "cb_gmres_reduce1, cb_gmres_reduce2, cb_gmres_integer, "
+              "cb_gmres_ireduce1, cb_gmres_ireduce2, cg, cgs, fcg, gmres, idr, "
+              "lower_trs, upper_trs, spd_direct, symm_direct, "
+              "near_symm_direct, direct, overhead");
 
 DEFINE_uint32(
     nrhs, 1,
@@ -246,7 +218,15 @@ std::unique_ptr<gko::LinOpFactory> generate_solver(
         return gko::experimental::solver::Direct<etype, itype>::build()
             .with_factorization(
                 gko::experimental::factorization::Lu<etype, itype>::build()
-                    .with_symmetric_sparsity(true))
+                    .with_symbolic_algorithm(gko::experimental::factorization::
+                                                 symbolic_type::symmetric))
+            .on(exec);
+    } else if (description == "near_symm_direct") {
+        return gko::experimental::solver::Direct<etype, itype>::build()
+            .with_factorization(
+                gko::experimental::factorization::Lu<etype, itype>::build()
+                    .with_symbolic_algorithm(gko::experimental::factorization::
+                                                 symbolic_type::near_symmetric))
             .on(exec);
     } else if (description == "direct") {
         return gko::experimental::solver::Direct<etype, itype>::build()

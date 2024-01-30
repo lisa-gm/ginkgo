@@ -1,35 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
-
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 template <typename ValueType, typename Mapping>
 __device__ __forceinline__ void scale(
@@ -42,9 +13,11 @@ __device__ __forceinline__ void scale(
         const int col = li % x.num_rhs;
 
         x.values[row * x.stride + col] =
-            alpha.values[map(col)] * x.values[row * x.stride + col];
+            alpha.values[map(row, col, alpha.stride)] *
+            x.values[row * x.stride + col];
     }
 }
+
 
 template <typename ValueType, typename Mapping>
 __global__
@@ -77,6 +50,7 @@ __device__ __forceinline__ void add_scaled(
     }
 }
 
+
 template <typename ValueType, typename Mapping>
 __global__ __launch_bounds__(
     default_block_size,
@@ -99,6 +73,28 @@ __global__ __launch_bounds__(
         const auto x_b = gko::batch::extract_batch_item(x, batch_id);
         const auto y_b = gko::batch::extract_batch_item(y, batch_id);
         add_scaled(alpha_b, x_b, y_b, map);
+    }
+}
+
+
+template <typename Group, typename ValueType>
+__device__ __forceinline__ void single_rhs_compute_conj_dot(Group subgroup,
+                                                            const int num_rows,
+                                                            const ValueType* x,
+                                                            const ValueType* y,
+                                                            ValueType& result)
+
+{
+    ValueType val = zero<ValueType>();
+    for (int r = subgroup.thread_rank(); r < num_rows; r += subgroup.size()) {
+        val += conj(x[r]) * y[r];
+    }
+
+    // subgroup level reduction
+    val = reduce(subgroup, val, thrust::plus<ValueType>{});
+
+    if (subgroup.thread_rank() == 0) {
+        result = val;
     }
 }
 
@@ -161,6 +157,27 @@ __launch_bounds__(default_block_size, sm_oversubscription) void compute_gen_dot_
         const auto y_b = gko::batch::extract_batch_item(y, batch_id);
         const auto r_b = gko::batch::extract_batch_item(result, batch_id);
         compute_gen_dot_product(x_b, y_b, r_b, map);
+    }
+}
+
+
+template <typename Group, typename ValueType>
+__device__ __forceinline__ void single_rhs_compute_norm2(
+    Group subgroup, const int num_rows, const ValueType* x,
+    remove_complex<ValueType>& result)
+{
+    using real_type = typename gko::remove_complex<ValueType>;
+    real_type val = zero<real_type>();
+
+    for (int r = subgroup.thread_rank(); r < num_rows; r += subgroup.size()) {
+        val += squared_norm(x[r]);
+    }
+
+    // subgroup level reduction
+    val = reduce(subgroup, val, thrust::plus<remove_complex<ValueType>>{});
+
+    if (subgroup.thread_rank() == 0) {
+        result = sqrt(val);
     }
 }
 
@@ -234,6 +251,17 @@ __global__ __launch_bounds__(
         const auto x_b = gko::batch::extract_batch_item(x, batch_id);
         const auto r_b = gko::batch::extract_batch_item(result, batch_id);
         compute_norm2(x_b, r_b);
+    }
+}
+
+
+template <typename ValueType>
+__device__ __forceinline__ void single_rhs_copy(const int num_rows,
+                                                const ValueType* in,
+                                                ValueType* out)
+{
+    for (int iz = threadIdx.x; iz < num_rows; iz += blockDim.x) {
+        out[iz] = in[iz];
     }
 }
 

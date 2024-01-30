@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef GKO_PUBLIC_CORE_BASE_LIN_OP_HPP_
 #define GKO_PUBLIC_CORE_BASE_LIN_OP_HPP_
@@ -520,6 +492,9 @@ public:
      * In the resulting LinOp, the entry at location `(i,j)` contains the input
      * value `(perm[i],perm[j])`.
      *
+     * From the linear algebra perspective, with $P_{ij} = \delta_{i
+     * \pi(i)}$, this represents the operation $P A P^T$.
+     *
      * @param permutation_indices  the array of indices containing the
      *                             permutation order.
      *
@@ -530,13 +505,16 @@ public:
     {
         return as<Permutable>(this->row_permute(permutation_indices))
             ->column_permute(permutation_indices);
-    };
+    }
 
     /**
      * Returns a LinOp representing the symmetric inverse row and column
      * permutation of the Permutable object.
      * In the resulting LinOp, the entry at location `(perm[i],perm[j])`
      * contains the input value `(i,j)`.
+     *
+     * From the linear algebra perspective, with $P_{ij} = \delta_{i
+     * \pi(i)}$, this represents the operation $P^{-1} A P^{-T}$.
      *
      * @param permutation_indices  the array of indices containing the
      *                             permutation order.
@@ -548,12 +526,15 @@ public:
     {
         return as<Permutable>(this->inverse_row_permute(permutation_indices))
             ->inverse_column_permute(permutation_indices);
-    };
+    }
 
     /**
      * Returns a LinOp representing the row permutation of the Permutable
      * object.
      * In the resulting LinOp, the row `i` contains the input row `perm[i]`.
+     *
+     * From the linear algebra perspective, with $P_{ij} = \delta_{i
+     * \pi(i)}$, this represents the operation $P A$.
      *
      * @param permutation_indices  the array of indices containing the
      *                             permutation order.
@@ -569,6 +550,9 @@ public:
      * In the resulting LinOp, the column `i` contains the input column
      * `perm[i]`.
      *
+     * From the linear algebra perspective, with $P_{ij} = \delta_{i
+     * \pi(i)}$, this represents the operation $A P^T$.
+     *
      * @param permutation_indices  the array of indices containing the
      *                             permutation order `perm`.
      *
@@ -581,6 +565,9 @@ public:
      * Returns a LinOp representing the row permutation of the inverse permuted
      * object.
      * In the resulting LinOp, the row `perm[i]` contains the input row `i`.
+     *
+     * From the linear algebra perspective, with $P_{ij} = \delta_{i
+     * \pi(i)}$, this represents the operation $P^{-1} A$.
      *
      * @param permutation_indices  the array of indices containing the
      *                             permutation order `perm`.
@@ -595,6 +582,9 @@ public:
      * object.
      * In the resulting LinOp, the column `perm[i]` contains the input column
      * `i`.
+     *
+     * From the linear algebra perspective, with $P_{ij} = \delta_{i
+     * \pi(i)}$, this represents the operation $A P^{-T}$.
      *
      * @param permutation_indices  the array of indices containing the
      *                             permutation order `perm`.

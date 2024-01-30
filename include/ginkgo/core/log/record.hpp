@@ -1,34 +1,6 @@
-/*******************************<GINKGO LICENSE>******************************
-Copyright (c) 2017-2023, the Ginkgo authors
-All rights reserved.
-
-Redistribution and use in source and binary forms, with or without
-modification, are permitted provided that the following conditions
-are met:
-
-1. Redistributions of source code must retain the above copyright
-notice, this list of conditions and the following disclaimer.
-
-2. Redistributions in binary form must reproduce the above copyright
-notice, this list of conditions and the following disclaimer in the
-documentation and/or other materials provided with the distribution.
-
-3. Neither the name of the copyright holder nor the names of its
-contributors may be used to endorse or promote products derived from
-this software without specific prior written permission.
-
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS
-IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED
-TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A
-PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
-******************************<GINKGO LICENSE>*******************************/
+// SPDX-FileCopyrightText: 2017 - 2024 The Ginkgo authors
+//
+// SPDX-License-Identifier: BSD-3-Clause
 
 #ifndef GKO_PUBLIC_CORE_LOG_RECORD_HPP_
 #define GKO_PUBLIC_CORE_LOG_RECORD_HPP_
@@ -402,17 +374,18 @@ public:
         const LinOp* residual_norm, const LinOp* implicit_resnorm_sq,
         const array<stopping_status>* status, bool stopped) const override;
 
-    [[deprecated(
+    GKO_DEPRECATED(
         "Please use the version with the additional stopping "
-        "information.")]] void
-    on_iteration_complete(const LinOp* solver, const size_type& num_iterations,
-                          const LinOp* residual, const LinOp* solution,
-                          const LinOp* residual_norm) const override;
+        "information.")
+    void on_iteration_complete(const LinOp* solver,
+                               const size_type& num_iterations,
+                               const LinOp* residual, const LinOp* solution,
+                               const LinOp* residual_norm) const override;
 
-    [[deprecated(
+    GKO_DEPRECATED(
         "Please use the version with the additional stopping "
-        "information.")]] void
-    on_iteration_complete(
+        "information.")
+    void on_iteration_complete(
         const LinOp* solver, const size_type& num_iterations,
         const LinOp* residual, const LinOp* solution,
         const LinOp* residual_norm,
@@ -436,10 +409,11 @@ public:
      * dependencies. At the same time, this method is short enough that it
      * shouldn't be a problem.
      */
-    [[deprecated("use two-parameter create")]] static std::unique_ptr<Record>
-    create(std::shared_ptr<const Executor> exec,
-           const mask_type& enabled_events = Logger::all_events_mask,
-           size_type max_storage = 1)
+    GKO_DEPRECATED("use two-parameter create")
+    static std::unique_ptr<Record> create(
+        std::shared_ptr<const Executor> exec,
+        const mask_type& enabled_events = Logger::all_events_mask,
+        size_type max_storage = 1)
     {
         return std::unique_ptr<Record>(new Record(enabled_events, max_storage));
     }
@@ -493,10 +467,10 @@ protected:
      *                     storage. It is advised to control this to reduce
      *                     memory overhead of this logger.
      */
-    [[deprecated("use two-parameter constructor")]] explicit Record(
-        std::shared_ptr<const gko::Executor> exec,
-        const mask_type& enabled_events = Logger::all_events_mask,
-        size_type max_storage = 0)
+    GKO_DEPRECATED("use two-parameter constructor")
+    explicit Record(std::shared_ptr<const gko::Executor> exec,
+                    const mask_type& enabled_events = Logger::all_events_mask,
+                    size_type max_storage = 0)
         : Record(enabled_events, max_storage)
     {}
 
