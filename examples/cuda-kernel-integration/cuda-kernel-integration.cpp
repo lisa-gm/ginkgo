@@ -132,11 +132,12 @@ int main(int argc, char* argv[])
         LLT = gko::read<Csr>(std::ifstream{FLAGS_cholesky_factor}, gpu);
     }
     if (!FLAGS_initial_guess.empty()) {
-        S_csr = gko::read<Csr>(std::ifstream{FLAGS_initial_guess}, gpu);
+        //S_csr = gko::read<Csr>(std::ifstream{FLAGS_initial_guess}, gpu);
+        S_csr = gko::read_generic<Csr>(std::ifstream{FLAGS_initial_guess}, gpu);
     }
 
     // compute cholesky factor
-    if (FLAGS_initial_guess.empty() && FLAGS_cholesky_factor.empty()) {
+    /*if (FLAGS_initial_guess.empty() && FLAGS_cholesky_factor.empty()) {
         auto P =
             gko::experimental::reorder::NestedDissection<value_type,
                                                          index_type>::build()
@@ -146,7 +147,7 @@ int main(int argc, char* argv[])
         if (I) {
             I = I->permute(P);
         }
-    }
+    }*/
 
     if (!LLT) {
         start = std::chrono::steady_clock::now();
@@ -286,7 +287,14 @@ int main(int argc, char* argv[])
     // write(std::cout, I);
     // write(std::cout, S_coo);
 
-    // std::ofstream sol_file = "selInv_mode.mtx";
+    //std::ofstream sol_file = "selInv_iter_mode.mtx";
+    //write_binary(std::ofstream{"selInv_iter_mode.bin"}, S_coo);
+
+    /*printf("S_values(1:10):\n");
+    for(int i=0; i<10; i++){
+        printf("%f\n", S_values[i]);
+    }*/
+
     // write(sol_inv, S_coo->permute(P,
     // gko::matrix::permute_mode::symm_inverse));
 }
